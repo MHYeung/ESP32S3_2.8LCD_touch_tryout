@@ -1,0 +1,31 @@
+menu "CST328 Touch Configuration"
+
+config TOUCH_CST328_ENABLED
+    bool "Enable CST328 capacitive touch"
+    default y
+
+config TOUCH_CST328_I2C_PORT
+    int "I2C port number"
+    default 0
+
+config TOUCH_CST328_SDA
+    int "Touch SDA GPIO"
+    default 1
+
+config TOUCH_CST328_SCL
+    int "Touch SCL GPIO"
+    default 3
+
+config TOUCH_CST328_RST
+    int "Touch RESET GPIO (-1 to disable)"
+    default 2
+
+config TOUCH_CST328_INT
+    int "Touch INT GPIO (-1 to disable)"
+    default 4
+
+config TOUCH_CST328_I2C_CLK
+    int "Touch I2C clock speed (Hz)"
+    default 400000
+
+endmenu

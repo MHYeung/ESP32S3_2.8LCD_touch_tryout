@@ -1,0 +1,53 @@
+menu "ST7789 LCD Configuration"
+
+config LCD_ST7789_ENABLED
+    bool "Enable ST7789 LCD"
+    default y
+
+config LCD_ST7789_HOST
+    int "SPI Host (2=SPI2, 3=SPI3)"
+    range 1 3
+    default 2
+    help
+        Usually SPI2_HOST for ESP32-S3.
+
+config LCD_ST7789_PIN_MOSI
+    int "LCD MOSI GPIO"
+    range 0 48
+    default 45
+
+config LCD_ST7789_PIN_SCLK
+    int "LCD SCLK GPIO"
+    range 0 48
+    default 40
+
+config LCD_ST7789_PIN_MISO
+    int "LCD MISO GPIO (-1 if unused)"
+    range -1 48
+    default -1
+
+config LCD_ST7789_PIN_DC
+    int "LCD D/C GPIO"
+    range 0 48
+    default 41
+
+config LCD_ST7789_PIN_CS
+    int "LCD CS GPIO"
+    range 0 48
+    default 42
+
+config LCD_ST7789_PIN_RST
+    int "LCD RESET GPIO"
+    range -1 48
+    default 39
+
+config LCD_ST7789_PIN_BL
+    int "LCD Backlight GPIO"
+    range -1 48
+    default 5
+
+config LCD_ST7789_PIXEL_CLOCK
+    int "LCD SPI pixel clock (Hz)"
+    default 20000000
+
+endmenu
