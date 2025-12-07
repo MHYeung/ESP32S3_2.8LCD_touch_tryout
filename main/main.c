@@ -41,6 +41,7 @@ static lv_indev_t *s_indev_touch = NULL;
 /* IMU handle */
 static qmi8658_handle_t s_imu;
 static ui_orientation_t s_current_orient = UI_ORIENT_PORTRAIT_0;
+static bool s_auto_rotate_enabled = true;
 
 /* Last touch point */
 static int16_t s_last_touch_x = 0;
@@ -98,6 +99,20 @@ static void sd_test_button_action(void)
                                              false); // overwrite
     ESP_LOGI("APP", "sd_mmc_helper_write_text returned %s",
              esp_err_to_name(err));
+}
+
+static void on_auto_rotate_setting_changed(bool enabled)
+{
+    s_auto_rotate_enabled = enabled;
+    ESP_LOGI("APP", "Auto-rotate %s", enabled ? "ON" : "OFF");
+}
+
+static void on_dark_mode_setting_changed(bool enabled)
+{
+    ESP_LOGI("APP", "Dark mode %s", enabled ? "ON" : "OFF");
+
+    // Simple example: call a UI helper you implement later
+    // ui_set_dark_mode(enabled);
 }
 
 /* ===========================================================
@@ -160,28 +175,31 @@ static void imu_ui_task(void *arg)
     {
         float ax, ay, az;
         esp_err_t err = qmi8658_read_accel(&s_imu, &ax, &ay, &az);
-        ui_orientation_t candidate = decide_orientation_from_accel(ax, ay, az);
-
-        /* Simple stability filter */
-        if (candidate == last_decision)
+        if (s_auto_rotate_enabled)
         {
-            if (stable_count < 20)
-                stable_count++; // cap it
-        }
-        else
-        {
-            last_decision = candidate;
-            stable_count = 0;
-        }
+            ui_orientation_t candidate = decide_orientation_from_accel(ax, ay, az);
 
-        /* Only change orientation if it's been stable for N samples */
-        const int REQUIRED_STABLE_SAMPLES = 8; // 8 * 50ms = 400ms
-        if (stable_count >= REQUIRED_STABLE_SAMPLES &&
-            candidate != s_current_orient)
-        {
+            /* Simple stability filter */
+            if (candidate == last_decision)
+            {
+                if (stable_count < 20)
+                    stable_count++; // cap it
+            }
+            else
+            {
+                last_decision = candidate;
+                stable_count = 0;
+            }
 
-            s_current_orient = candidate;
-            ui_set_orientation(candidate);
+            /* Only change orientation if it's been stable for N samples */
+            const int REQUIRED_STABLE_SAMPLES = 8; // 8 * 50ms = 400ms
+            if (stable_count >= REQUIRED_STABLE_SAMPLES &&
+                candidate != s_current_orient)
+            {
+
+                s_current_orient = candidate;
+                ui_set_orientation(candidate);
+            }
         }
         if (err == ESP_OK)
         {
@@ -288,6 +306,9 @@ void app_main(void)
 
     /* Mount SD card */
     ESP_ERROR_CHECK(sd_mmc_helper_mount(&s_sd, "/sdcard"));
+
+    ui_register_dark_mode_cb(on_dark_mode_setting_changed);
+    ui_register_auto_rotate_cb(on_auto_rotate_setting_changed);
 
     const char *test = "hello\n";
     esp_err_t err = sd_mmc_helper_write_text(&s_sd, "hello.txt", test, false);

@@ -19,6 +19,8 @@ static lv_chart_series_t *s_ser_y;
 static lv_chart_series_t *s_ser_z;
 
 static ui_sd_test_cb_t s_sd_test_cb = NULL;
+static ui_dark_mode_cb_t s_dark_mode_cb = NULL;
+static ui_auto_rotate_cb_t s_auto_rotate_cb = NULL;
 
 /* ------------ Internal UI callbacks ------------ */
 
@@ -38,24 +40,72 @@ static void btn_event_cb(lv_event_t *e)
     }
 }
 
-
 void ui_register_sd_test_cb(ui_sd_test_cb_t cb)
 {
     s_sd_test_cb = cb;
 }
 
-static void btn_settings_back_cb(lv_event_t *e)
+void ui_register_dark_mode_cb(ui_dark_mode_cb_t cb)
 {
-    (void)e;
-    ui_go_to_page(UI_PAGE_CONTROLS, true); // or your live-data page enum
+    s_dark_mode_cb = cb;
+}
+void ui_register_auto_rotate_cb(ui_auto_rotate_cb_t cb)
+{
+    s_auto_rotate_cb = cb;
 }
 
-static void btn_sd_test_cb(lv_event_t *e)
+static lv_obj_t *create_settings_row(lv_obj_t *parent,
+                                     const char *label_txt,
+                                     lv_event_cb_t switch_event_cb,
+                                     bool initial_state)
 {
-    (void)e;
-    if (s_sd_test_cb)
+    // Row container (horizontal flex)
+    lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row,
+                          LV_FLEX_ALIGN_START,   // main axis
+                          LV_FLEX_ALIGN_CENTER,  // cross axis
+                          LV_FLEX_ALIGN_CENTER); // track
+
+    lv_obj_set_style_pad_all(row, 4, 0);
+    lv_obj_set_style_border_width(row, 0, 0);
+
+    // Label on the left
+    lv_obj_t *lbl = lv_label_create(row);
+    lv_label_set_text(lbl, label_txt);
+    lv_obj_set_flex_grow(lbl, 1); // take remaining width
+
+    // Switch on the right
+    lv_obj_t *sw = lv_switch_create(row);
+    lv_obj_add_event_cb(sw, switch_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    if (initial_state)
+        lv_obj_add_state(sw, LV_STATE_CHECKED);
+
+    return sw; // in case you later want to store it
+}
+
+static void sw_dark_mode_event_cb(lv_event_t *e)
+{
+    lv_obj_t *sw = lv_event_get_target(e);
+    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    if (s_dark_mode_cb)
     {
-        s_sd_test_cb();
+        s_dark_mode_cb(on);
+    }
+}
+
+static void sw_auto_rotate_event_cb(lv_event_t *e)
+{
+    lv_obj_t *sw = lv_event_get_target(e);
+    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
+
+    if (s_auto_rotate_cb)
+    {
+        s_auto_rotate_cb(on);
     }
 }
 
@@ -99,7 +149,7 @@ static void create_tabs_ui(void)
     s_tab_system = lv_tabview_add_tab(s_tabview, "System");
     s_tab_settings = lv_tabview_add_tab(s_tabview, "Settings");
 
-    /* -------- Tab 1: Controls -------- */
+    /* -------- Demo Test Tab -------- */
     lv_obj_t *label1 = lv_label_create(s_tab_controls);
     lv_label_set_text(label1, "Page 1: Button test");
     lv_obj_align(label1, LV_ALIGN_TOP_MID, 0, 10);
@@ -113,7 +163,7 @@ static void create_tabs_ui(void)
     lv_label_set_text(btn_label, "Click me");
     lv_obj_center(btn_label);
 
-    /* -------- Tab 2: IMU -------- */
+    /* -------- IMU Tab -------- */
     s_label_imu = lv_label_create(s_tab_imu);
     lv_label_set_text(s_label_imu, "ax=?  ay=?  az=?  m/s^2");
     lv_obj_align(s_label_imu, LV_ALIGN_TOP_MID, 0, 10);
@@ -144,19 +194,28 @@ static void create_tabs_ui(void)
     lv_label_set_text(sys_label, "System info (placeholder)");
     lv_obj_align(sys_label, LV_ALIGN_TOP_LEFT, 4, 4);
 
-    lv_obj_t *set_label = lv_label_create(s_tab_settings);
-    lv_label_set_text(set_label, "Settings (placeholder)");
-    lv_obj_align(set_label, LV_ALIGN_TOP_LEFT, 4, 4);
+    /* -------- "Settings Tab" -------- */
+    lv_obj_t *cont = lv_obj_create(s_tab_settings);
+    lv_obj_set_size(cont, lv_pct(100), lv_pct(100));
+    lv_obj_center(cont);
 
-    /* "Write test CSV" button */
-    lv_obj_t *btn_sd = lv_button_create(s_tab_settings);
-    lv_obj_set_size(btn_sd, 140, 40);
-    lv_obj_align(btn_sd, LV_ALIGN_TOP_MID, 0, 60);
-    lv_obj_add_event_cb(btn_sd, btn_sd_test_cb, LV_EVENT_CLICKED, NULL);
+    // Use flex layout: vertical list
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(cont, 10, 0); // spacing between rows
+    lv_obj_set_style_pad_all(cont, 10, 0);
+    lv_obj_set_style_border_width(cont, 0, 0); // optional: no border
 
-    lv_obj_t *lbl_sd = lv_label_create(btn_sd);
-    lv_label_set_text(lbl_sd, "Write test CSV");
-    lv_obj_center(lbl_sd);
+    // Dark mode row
+    create_settings_row(cont,
+                        "Dark mode",
+                        sw_dark_mode_event_cb,
+                        false /* initial off, or true if you default to dark */);
+
+    // Auto-rotate row
+    create_settings_row(cont,
+                        "Auto rotate",
+                        sw_auto_rotate_event_cb,
+                        true /* if you default auto-rotation on */);
 }
 
 /* ------------ Public API ------------ */
@@ -217,4 +276,3 @@ void ui_go_to_page(ui_page_t page, bool animated)
         animated ? LV_ANIM_ON : LV_ANIM_OFF);
     lvgl_port_unlock();
 }
-

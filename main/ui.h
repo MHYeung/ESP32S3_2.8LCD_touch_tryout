@@ -43,4 +43,9 @@ void ui_update_imu(float ax, float ay, float az);
 void ui_go_to_page(ui_page_t page, bool animated);
 
 typedef void (*ui_sd_test_cb_t)(void);
+typedef void (*ui_dark_mode_cb_t)(bool enabled);
+typedef void (*ui_auto_rotate_cb_t)(bool enabled);
+
 void ui_register_sd_test_cb(ui_sd_test_cb_t cb);
+void ui_register_dark_mode_cb(ui_dark_mode_cb_t cb);
+void ui_register_auto_rotate_cb(ui_auto_rotate_cb_t cb);
