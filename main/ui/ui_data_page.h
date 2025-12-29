@@ -6,6 +6,7 @@
 
 typedef enum {
     DATA_METRIC_PACE,
+    DATA_METRIC_AVG_PACE,
     DATA_METRIC_TIME,
     DATA_METRIC_DISTANCE,
     DATA_METRIC_SPEED,
@@ -19,6 +20,7 @@ typedef struct {
     float time_s;          // total elapsed
     float distance_m;
     float pace_s_per_500m;
+    float avg_pace_s_per_500m;
     float speed_mps;
     float spm;
     float power_w;

@@ -161,6 +161,10 @@ static void metric_title_unit(data_metric_t metric, const char **title, const ch
         *title = "Pace";
         *unit = "/500m";
         break;
+    case DATA_METRIC_AVG_PACE:
+        *title = "Avg. Pace";
+        *unit = "/500m";
+        break;    
     case DATA_METRIC_TIME:
         *title = "Time";
         *unit = "";
@@ -210,6 +214,9 @@ static void apply_metric_to_slot(int idx)
     case DATA_METRIC_PACE:
         fmt_pace_s_per_500m(s_values.pace_s_per_500m, value_buf, sizeof(value_buf));
         break;
+    case DATA_METRIC_AVG_PACE:
+        fmt_pace_s_per_500m(s_values.avg_pace_s_per_500m, value_buf, sizeof(value_buf));
+        break;    
     case DATA_METRIC_TIME:
         fmt_time_s(s_values.time_s, value_buf, sizeof(value_buf));
         break;

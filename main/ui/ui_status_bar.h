@@ -28,3 +28,9 @@ void ui_status_bar_set_time_base(ui_status_bar_t *bar, uint32_t start_sec);
 lv_obj_t *ui_status_bar_root(ui_status_bar_t *bar);
 
 void ui_status_bar_force_refresh(ui_status_bar_t *bar);
+
+// Call from ANY task
+void ui_status_bar_set_gps_default_safe(bool connected, uint8_t bars_0_to_4);
+
+// Optional: set which status bar is the default (if you ever have multiple)
+void ui_status_bar_set_default(ui_status_bar_t *bar);

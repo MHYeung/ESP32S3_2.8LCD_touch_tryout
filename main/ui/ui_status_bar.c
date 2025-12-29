@@ -6,11 +6,17 @@
 
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_lvgl_port.h"
+#include "lvgl.h"
 
 #include <stdio.h>
 #include <string.h>
 
 static const char *TAG = "ui_status_bar";
+
+static ui_status_bar_t *s_default_bar = NULL;
+static bool s_cached_gps_connected = false;
+static uint8_t s_cached_gps_bars = 0;
 
 static battery_drv_handle_t s_bat = NULL;
 static bool s_bat_inited = false;
@@ -18,6 +24,11 @@ static bool s_bat_inited = false;
 static int32_t s_cols_land[] = { LV_GRID_FR(3), LV_GRID_FR(2), LV_GRID_FR(2), LV_GRID_TEMPLATE_LAST };
 static int32_t s_cols_port[] = { LV_GRID_FR(5), LV_GRID_FR(4), LV_GRID_FR(4), LV_GRID_TEMPLATE_LAST };
 static int32_t s_rows[]      = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+
+void ui_status_bar_set_default(ui_status_bar_t *bar)
+{
+    s_default_bar = bar;
+}
 
 static bool status_bar_is_landscape(void)
 {
@@ -172,7 +183,8 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
     lv_obj_set_style_text_align(bar->gps_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(bar->gps_label, LV_LABEL_LONG_CLIP);
     lv_obj_set_grid_cell(bar->gps_label, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_CENTER, 0, 1);
-    ui_status_bar_set_gps_status(bar, false, 0);
+    ui_status_bar_set_default(bar);                    
+    ui_status_bar_set_gps_status(bar, s_cached_gps_connected, s_cached_gps_bars);  // apply cached
 
     bar->batt_label = lv_label_create(bar->root);
     lv_label_set_text(bar->batt_label, "--%");
@@ -265,4 +277,18 @@ void ui_status_bar_force_refresh(ui_status_bar_t *bar)
     if (!bar) return;
     status_bar_clock_update(bar);
     if (bar->clock_timer) lv_timer_ready(bar->clock_timer); // immediate tick
+}
+
+void ui_status_bar_set_gps_default_safe(bool connected, uint8_t bars_0_to_4)
+{
+    // Cache latest requested state (works even if UI not created yet)
+    s_cached_gps_connected = connected;
+    s_cached_gps_bars = (bars_0_to_4 > 4) ? 4 : bars_0_to_4;
+
+    if (!s_default_bar) return;
+
+    // Thread-safe LVGL update
+    lvgl_port_lock(0);
+    ui_status_bar_set_gps_status(s_default_bar, s_cached_gps_connected, s_cached_gps_bars);
+    lvgl_port_unlock();
 }

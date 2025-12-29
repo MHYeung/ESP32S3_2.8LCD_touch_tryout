@@ -8,7 +8,6 @@
 #include "lcd_st7789.h"
 #include "touch_cst328.h"
 #include "esp_lvgl_port.h"
-#include "lvgl.h"
 
 #include "i2c_helper.h"
 #include "qmi8658.h"
@@ -54,7 +53,8 @@ static const char *TAG = "app";
 #define IMU_I2C_CLK CONFIG_IMU_QMI8658_I2C_CLK
 
 /* Toggle Activity globals*/
-typedef enum {
+typedef enum
+{
     ACT_CMD_START = 0,
     ACT_CMD_STOP_SAVE,
 } act_cmd_t;
@@ -63,7 +63,7 @@ typedef enum {
  * Globals
  * ===================== */
 
-static sd_mmc_helper_t s_sd; 
+static sd_mmc_helper_t s_sd;
 static QueueHandle_t s_act_q = NULL;
 static TaskHandle_t s_act_worker_task = NULL;
 static bool s_activity_recording = false;
@@ -71,8 +71,8 @@ static bool s_activity_recording = false;
 static activity_t s_activity;
 static uint32_t s_activity_next_id = 1;
 
-static float s_session_time_s = 0.0f;          // session timer shown on data page
-static int64_t s_session_last_us = 0;          // for dt computation
+static float s_session_time_s = 0.0f; // session timer shown on data page
+static int64_t s_session_last_us = 0; // for dt computation
 
 static uint32_t s_last_session_stroke_count = 0; // baseline for session delta
 static SemaphoreHandle_t s_activity_mutex = NULL;
@@ -108,7 +108,6 @@ static void gps_fix_cb(const gps_fix_t *fix, void *user);
 static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data);
 
 static void on_shutdown_confirmed(void);
-static void app_enter_sleep(void);
 static void pwr_evt_cb(pwr_key_event_t evt, void *user);
 static void app_pwr_key_setup(void);
 
@@ -144,14 +143,17 @@ static time_t mktime_utc(struct tm *t)
     // mktime interprets as local time. Convert as UTC by temporarily setting TZ.
     char *old = getenv("TZ");
     char old_copy[64] = {0};
-    if (old) strncpy(old_copy, old, sizeof(old_copy)-1);
+    if (old)
+        strncpy(old_copy, old, sizeof(old_copy) - 1);
 
     setenv("TZ", "UTC0", 1);
     tzset();
     time_t epoch = mktime(t);
 
-    if (old) setenv("TZ", old_copy, 1);
-    else unsetenv("TZ");
+    if (old)
+        setenv("TZ", old_copy, 1);
+    else
+        unsetenv("TZ");
     tzset();
 
     return epoch;
@@ -160,13 +162,16 @@ static time_t mktime_utc(struct tm *t)
 static void gps_fix_cb(const gps_fix_t *fix, void *user)
 {
     (void)user;
-    if (!fix) return;
+    if (!fix)
+        return;
 
-    if (!s_time_synced_from_gps && fix->valid_time && fix->valid_date) {
+    if (!s_time_synced_from_gps && fix->valid_time && fix->valid_date)
+    {
         // 1) set system time (epoch in UTC)
         struct tm t = fix->utc_tm;
         time_t epoch_utc = mktime_utc(&t);
-        if (epoch_utc > 1700000000) { // sanity check (>= ~2023)
+        if (epoch_utc > 1700000000)
+        { // sanity check (>= ~2023)
             struct timeval tv = {.tv_sec = epoch_utc, .tv_usec = 0};
             settimeofday(&tv, NULL);
 
@@ -178,11 +183,11 @@ static void gps_fix_cb(const gps_fix_t *fix, void *user)
             localtime_r(&epoch_utc, &local_tm);
 
             datetime_t dt = {0};
-            dt.year   = local_tm.tm_year + 1900;
-            dt.month  = local_tm.tm_mon + 1;
-            dt.day    = local_tm.tm_mday;
-            dt.dotw   = local_tm.tm_wday; // check your RTC expects 0=Sun; adjust if needed
-            dt.hour   = local_tm.tm_hour;
+            dt.year = local_tm.tm_year + 1900;
+            dt.month = local_tm.tm_mon + 1;
+            dt.day = local_tm.tm_mday;
+            dt.dotw = local_tm.tm_wday; // check your RTC expects 0=Sun; adjust if needed
+            dt.hour = local_tm.tm_hour;
             dt.minute = local_tm.tm_min;
             dt.second = local_tm.tm_sec;
 
@@ -192,10 +197,9 @@ static void gps_fix_cb(const gps_fix_t *fix, void *user)
         }
     }
     ESP_LOGI("GPS", "fix=%d time=%d date=%d lat=%.7f lon=%.7f speed=%.2f sats=%d hdop=%.1f",
-         fix->valid_fix, fix->valid_time, fix->valid_date,
-         fix->lat_deg, fix->lon_deg, fix->speed_mps, fix->sats, fix->hdop);
+             fix->valid_fix, fix->valid_time, fix->valid_date,
+             fix->lat_deg, fix->lon_deg, fix->speed_mps, fix->sats, fix->hdop);
 }
-
 
 /* -------------------------------------------------------------------------- */
 /*  Touch input (LVGL read callback)                                           */
@@ -235,7 +239,6 @@ static void touch_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
     }
 }
 
-
 /* -------------------------------------------------------------------------- */
 /*  Power / Shutdown handling                                                  */
 /* -------------------------------------------------------------------------- */
@@ -247,23 +250,6 @@ static void on_shutdown_confirmed(void)
     pwr_key_set_hold(false);
 }
 
-static void app_enter_sleep(void)
-{
-    // TODO: turn off backlight here if you have a function/pin for it
-    // backlight_set(false);
-
-    // Wake on key press (active-low)
-    // GPIO6 must be RTC-capable for ext0; on ESP32-S3 this is usually OK.
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
-    esp_sleep_enable_ext0_wakeup(GPIO_NUM_6, 0);
-
-    // Light sleep keeps RAM and resumes quickly
-    esp_light_sleep_start();
-
-    // Woke up
-    // backlight_set(true);
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Power key event handling                                                   */
 /* -------------------------------------------------------------------------- */
@@ -272,30 +258,34 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
 {
     (void)user;
 
-    switch (evt) {
-        case PWR_KEY_EVT_ACTIVITY_TOGGLE:
+    switch (evt)
+    {
+    case PWR_KEY_EVT_ACTIVITY_TOGGLE:
+    {
+        if (!s_activity_recording)
         {
-            if (!s_activity_recording) {
-                // Start immediately
-                act_cmd_t cmd = ACT_CMD_START;
-                xQueueSend(s_act_q, &cmd, 0);
-            } else {
-                // Recording -> ask user
-                ui_show_stop_save_prompt();
-            }
-            break;
+            // Start immediately
+            act_cmd_t cmd = ACT_CMD_START;
+            xQueueSend(s_act_q, &cmd, 0);
         }
+        else
+        {
+            // Recording -> ask user
+            ui_show_stop_save_prompt();
+        }
+        break;
+    }
 
-        case PWR_KEY_EVT_SHUTDOWN_PROMPT:
-            // Keep your previous behavior (optional)
-            ui_show_shutdown_prompt();
-            ESP_LOGI(TAG, "Long press 5s: show shutdown prompt");
-            break;
+    case PWR_KEY_EVT_SHUTDOWN_PROMPT:
+        // Keep your previous behavior (optional)
+        ui_show_shutdown_prompt();
+        ESP_LOGI(TAG, "Long press 5s: show shutdown prompt");
+        break;
 
-        case PWR_KEY_EVT_SHORT_PRESS:
-        default:
-            // optional: ignore short press for now
-            break;
+    case PWR_KEY_EVT_SHORT_PRESS:
+    default:
+        // optional: ignore short press for now
+        break;
     }
 }
 
@@ -328,14 +318,18 @@ static void activity_worker_task(void *arg)
 
     act_cmd_t cmd;
 
-    for (;;) {
-        if (xQueueReceive(s_act_q, &cmd, portMAX_DELAY) != pdTRUE) continue;
+    for (;;)
+    {
+        if (xQueueReceive(s_act_q, &cmd, portMAX_DELAY) != pdTRUE)
+            continue;
 
         ui_go_to_page(UI_PAGE_DATA, true);
 
-        if (s_activity_mutex) xSemaphoreTake(s_activity_mutex, portMAX_DELAY);
+        if (s_activity_mutex)
+            xSemaphoreTake(s_activity_mutex, portMAX_DELAY);
 
-        if (cmd == ACT_CMD_START) {
+        if (cmd == ACT_CMD_START)
+        {
             s_activity_recording = true;
             s_session_time_s = 0.0f;
 
@@ -343,27 +337,31 @@ static void activity_worker_task(void *arg)
             activity_init(&s_activity, id);
             activity_start(&s_activity, time(NULL));
 
-            if (s_sd.mounted) {
+            if (s_sd.mounted)
+            {
                 // Starts the per-stroke CSV log file on the SD card
                 activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id);
             }
 
             s_last_session_stroke_count = 0;
 
-            if (s_activity_mutex) xSemaphoreGive(s_activity_mutex);
+            if (s_activity_mutex)
+                xSemaphoreGive(s_activity_mutex);
 
             data_page_show_activity_toast(true);
             ESP_LOGI("ACT", "START id=%lu", (unsigned long)id);
         }
 
-        if (cmd == ACT_CMD_STOP_SAVE) {
+        if (cmd == ACT_CMD_STOP_SAVE)
+        {
             s_activity_recording = false;
-            
+
             // Stop logic updates end time and averages
             activity_stop(&s_activity, time(NULL));
 
-            activity_t snapshot = s_activity; 
-            if (s_activity_mutex) xSemaphoreGive(s_activity_mutex);
+            activity_t snapshot = s_activity;
+            if (s_activity_mutex)
+                xSemaphoreGive(s_activity_mutex);
 
             data_page_show_activity_toast(false);
             ESP_LOGI("ACT", "STOP id=%lu Dist=%.1fm", (unsigned long)snapshot.id, (double)snapshot.distance_m);
@@ -396,16 +394,18 @@ static void activity_logger_task(void *arg)
     (void)arg;
 
     activity_log_row_t row;
-    for (;;) {
-        if (xQueueReceive(s_log_q, &row, portMAX_DELAY) == pdTRUE) {
+    for (;;)
+    {
+        if (xQueueReceive(s_log_q, &row, portMAX_DELAY) == pdTRUE)
+        {
             // Only append if file is open
-            if (s_act_log.opened) {
+            if (s_act_log.opened)
+            {
                 activity_log_append(&s_act_log, &row);
             }
         }
     }
 }
-
 
 /* -------------------------------------------------------------------------- */
 /*  Settings callbacks                                                         */
@@ -428,7 +428,7 @@ static void on_dark_mode_setting_changed(bool enabled)
 static void on_split_interval_changed(uint32_t length_m)
 {
     ESP_LOGI(TAG, "UI Callback: Split Interval changed to %lu meters", length_m);
-    
+
     // Update the logger configuration immediately
     activity_log_set_split_interval(&s_act_log, length_m);
 }
@@ -508,39 +508,40 @@ static void stroke_task(void *arg)
     (void)arg;
 
     // GPS smoothing state
-    static float  s_gps_speed_filt = NAN;
+    static float s_gps_speed_filt = NAN;
     static double s_gps_lat = NAN;
     static double s_gps_lon = NAN;
+    static float s_total_distance = NAN;
 
     const float fs_hz = 200.0f;
     const stroke_detection_cfg_t cfg = {
         .fs_hz = fs_hz,
-        
+
         // Gravity rejection: Slower is better for a steady hull to isolate "surge" from "tilt"
-        .gravity_tau_s = 1.0f,  // Was 0.8f
-        
+        .gravity_tau_s = 1.0f, // Was 0.8f
+
         // Axis detection: Hull acceleration is linear, so we hold the decision longer
         .axis_window_s = 4.0f,
-        .axis_hold_s = 1.0f,    // Was 0.5f - reduces switching noise
+        .axis_hold_s = 1.0f,          // Was 0.5f - reduces switching noise
         .accel_use_fixed_axis = true, // Keep true if you know the mounting orientation
-        .accel_fixed_axis = 2,  // Ensure this matches your physical mount (2 = Z-axis usually)
-        
+        .accel_fixed_axis = 2,        // Ensure this matches your physical mount (2 = Z-axis usually)
+
         // FILTERS (CRITICAL CHANGE):
         // Boat surge is a slow, rhythmic "push" (approx 0.5 - 1.0 Hz).
         // High frequencies (engine vibration, water chop) must be aggressively cut.
-        .hpf_hz = 0.1f,         // Was 0.2f. Needs to pass the very slow drive start.
-        .lpf_hz = 3.0f,         // Was 1.2f. Raised slightly to capture the sharp "catch" impact, but still filter vibration.
-        
+        .hpf_hz = 0.1f, // Was 0.2f. Needs to pass the very slow drive start.
+        .lpf_hz = 3.0f, // Was 1.2f. Raised slightly to capture the sharp "catch" impact, but still filter vibration.
+
         // TIMING:
         .min_stroke_period_s = 0.8f, // 60 SPM max (Rowing is usually < 40)
         .max_stroke_period_s = 6.0f, // 10 SPM min
-        
+
         // THRESHOLDS:
         // These now apply to Acceleration (m/s^2), not Gyro (rad/s).
         // 1.3x multiplier above noise floor.
         // 0.35 m/s^2 floor (approx 0.035g) avoids triggering on small waves.
-        .thr_k = 1.3f,               // Was STROKE_THR_K_DEFAULT (1.0)
-        .thr_floor = 0.35f,          // Was STROKE_THR_FLOOR_DEFAULT (0.85)
+        .thr_k = 1.3f,      // Was STROKE_THR_K_DEFAULT (1.0)
+        .thr_floor = 0.35f, // Was STROKE_THR_FLOOR_DEFAULT (0.85)
     };
 
     stroke_detection_init(&s_stroke, &cfg);
@@ -553,69 +554,115 @@ static void stroke_task(void *arg)
     int stable_count = 0;
 
     const TickType_t sample_delay = pdMS_TO_TICKS(5); // ~200 Hz
-    const TickType_t ui_period    = pdMS_TO_TICKS(80);  // 12.5 Hz UI updates
+    const TickType_t ui_period = pdMS_TO_TICKS(100);  // 10 Hz UI updates
 
     static float s_last_valid_spm = NAN;
     static float s_last_spm_t_s = -1.0f;
 
-    while (1) {
+    while (1)
+    {
         float ax, ay, az, gx, gy, gz;
         esp_err_t err = qmi8658_read_accel_gyro(&s_imu, &ax, &ay, &az, &gx, &gy, &gz);
-        if (err == ESP_OK) {
+        if (err == ESP_OK)
+        {
 
             int64_t now_us = esp_timer_get_time();
-            float t_s  = (float)(now_us - t0_us) * 1e-6f;
+            float t_s = (float)(now_us - t0_us) * 1e-6f;
             float dt_s = (float)(now_us - prev_us) * 1e-6f;
             prev_us = now_us;
-            if (dt_s < 0.0f) dt_s = 0.0f;
-            if (dt_s > 0.1f) dt_s = 0.1f;
+            if (dt_s < 0.0f)
+                dt_s = 0.0f;
+            if (dt_s > 0.1f)
+                dt_s = 0.1f;
 
             stroke_metrics_t m = {0};
             stroke_event_t ev = stroke_detection_update(&s_stroke, t_s, ax, ay, az, gx, gy, gz, &m);
 
-            if (ev != STROKE_EVENT_NONE) {
+            if (ev != STROKE_EVENT_NONE)
+            {
                 ESP_LOGI("STROKE", "ev=%d count=%lu spm=%.1f period=%.2fs",
                          (int)ev, (unsigned long)m.stroke_count, (double)m.spm, (double)m.stroke_period_s);
             }
 
             // Orientation Logic
-            if (s_auto_rotate_enabled) {
+            if (s_auto_rotate_enabled)
+            {
                 ui_orientation_t candidate = decide_orientation_from_accel(ax, ay, az);
-                if (candidate == last_orient) {
-                    if (stable_count < 20) stable_count++;
-                } else {
+                if (candidate == last_orient)
+                {
+                    if (stable_count < 20)
+                        stable_count++;
+                }
+                else
+                {
                     last_orient = candidate;
                     stable_count = 0;
                 }
-                if (stable_count >= 8 && candidate != s_current_orient) {
+                if (stable_count >= 8 && candidate != s_current_orient)
+                {
                     s_current_orient = candidate;
                     ui_set_orientation(candidate);
                 }
             }
 
-            if (isfinite(m.spm) && m.spm >= 10.0f && m.spm <= 80.0f) {
+            if (isfinite(m.spm) && m.spm >= 10.0f && m.spm <= 80.0f)
+            {
                 s_last_valid_spm = m.spm;
                 s_last_spm_t_s = t_s;
             }
 
             float spm_raw = s_last_valid_spm;
-            if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f) spm_raw = NAN;
-            if (!isfinite(spm_raw)) spm_raw = 0.0f;
+            if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f)
+                spm_raw = NAN;
+            if (!isfinite(spm_raw))
+                spm_raw = 0.0f;
 
             // GPS Logic
             gps_fix_t fix;
+            bool gps_connected = false;
+            uint8_t gps_bars = 0;
             bool gps_ok = false;
-            if (gps_gtu8_get_latest(&fix)) {
+            if (gps_gtu8_get_latest(&fix))
+            {
                 int64_t age_us = esp_timer_get_time() - fix.rx_time_us;
-                if (fix.valid_fix && isfinite(fix.speed_mps) && age_us < 2000000) {
+                gps_connected = (age_us < 2000000);
+                if (fix.valid_fix && isfinite(fix.speed_mps) && gps_connected)
+                {
                     gps_ok = true;
                     s_gps_lat = fix.lat_deg;
                     s_gps_lon = fix.lon_deg;
+                    s_total_distance += fix.speed_mps * dt_s;
 
-                    const float tau = 1.0f;
+                    const float tau = 2.2f;
                     float alpha = dt_s / (tau + dt_s);
-                    if (!isfinite(s_gps_speed_filt)) s_gps_speed_filt = fix.speed_mps;
-                    else s_gps_speed_filt += alpha * (fix.speed_mps - s_gps_speed_filt);
+                    if (!isfinite(s_gps_speed_filt))
+                        s_gps_speed_filt = fix.speed_mps;
+                    else
+                        s_gps_speed_filt += alpha * (fix.speed_mps - s_gps_speed_filt);
+
+                    // GPS Bar UI
+                    int sats = fix.sats;
+                    float hdop = fix.hdop;
+                    static bool last_conn = false;
+                    static uint8_t last_bars = 0;
+                    if (sats >= 10 && hdop <= 1.2f)
+                        gps_bars = 4;
+                    else if (sats >= 8 && hdop <= 1.8f)
+                        gps_bars = 3;
+                    else if (sats >= 6 && hdop <= 2.8f)
+                        gps_bars = 2;
+                    else
+                        gps_bars = 1;
+                    if (gps_connected != last_conn || gps_bars != last_bars)
+                    {
+                        ui_status_bar_set_gps_default_safe(gps_connected, gps_bars);
+                        last_conn = gps_connected;
+                        last_bars = gps_bars;
+                    }
+                }
+                else if (gps_connected)
+                {
+                    gps_bars = 0; // warning state
                 }
             }
 
@@ -623,29 +670,33 @@ static void stroke_task(void *arg)
             float dist_delta_m = speed_mps * dt_s;
 
             // --- 1. Calculate Derived Metrics for Logging ---
-            
+
             // Instant Pace (s/500m)
             float instant_pace_s = (speed_mps > 0.1f) ? (500.0f / speed_mps) : 0.0f;
 
             // Stroke Length (m) = Speed * Period
             float stroke_len_m = 0.0f;
-            if (isfinite(m.stroke_period_s) && m.stroke_period_s > 0.0f) {
+            if (isfinite(m.stroke_period_s) && m.stroke_period_s > 0.0f)
+            {
                 stroke_len_m = speed_mps * m.stroke_period_s;
             }
 
             // Recovery Ratio = Recovery / Drive
             float recov_ratio = 0.0f;
-            if (m.drive_time_s > 0.01f) {
+            if (m.drive_time_s > 0.01f)
+            {
                 recov_ratio = m.recovery_time_s / m.drive_time_s;
             }
             // --- End Derived Metrics ---
 
             bool need_log = false;
-            activity_log_row_t row = {0}; 
+            activity_log_row_t row = {0};
 
-            if (s_activity_mutex) xSemaphoreTake(s_activity_mutex, portMAX_DELAY);
+            if (s_activity_mutex)
+                xSemaphoreTake(s_activity_mutex, portMAX_DELAY);
 
-            if (s_activity_recording) {
+            if (s_activity_recording)
+            {
                 s_session_time_s += dt_s;
 
                 uint32_t stroke_delta = (ev == STROKE_EVENT_CATCH) ? 1 : 0;
@@ -663,12 +714,13 @@ static void stroke_task(void *arg)
                 float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : 0.0f;
 
                 // Only log on CATCH
-                if (ev == STROKE_EVENT_CATCH) {
-                    
+                if (ev == STROKE_EVENT_CATCH)
+                {
+
                     // --- Populate the 16-Column Row ---
-                    
+
                     // 1. RTC Time
-                    row.rtc_time = time(NULL); 
+                    row.rtc_time = time(NULL);
                     // 2. Session Time
                     row.session_time_s = s_session_time_s;
                     // 3. Distance (Total)
@@ -690,7 +742,7 @@ static void stroke_task(void *arg)
                     // 11. GPS Long
                     row.gps_lon = gps_ok ? s_gps_lon : 0.0;
                     // 12. Power
-                    row.power_w = 0.0f; 
+                    row.power_w = 0.0f;
                     // 13. Drive Time
                     row.drive_time_s = m.drive_time_s;
                     // 14. Recovery Time
@@ -700,14 +752,18 @@ static void stroke_task(void *arg)
 
                     need_log = true;
                 }
-            } else {
+            }
+            else
+            {
                 s_session_time_s = 0.0f;
             }
 
-            if (s_activity_mutex) xSemaphoreGive(s_activity_mutex);
+            if (s_activity_mutex)
+                xSemaphoreGive(s_activity_mutex);
 
-            if (need_log && s_log_q) {
-                xQueueSend(s_log_q, &row, 0); 
+            if (need_log && s_log_q)
+            {
+                xQueueSend(s_log_q, &row, 0);
             }
 
             // UI Update
@@ -716,18 +772,22 @@ static void stroke_task(void *arg)
             {
                 last_ui_tick = now;
                 float spm_raw_ui = s_last_valid_spm;
-                if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f) spm_raw_ui = NAN;
+                if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f)
+                    spm_raw_ui = NAN;
 
                 float spm_disp = spm_raw_ui;
-                if (isfinite(spm_disp)) spm_disp = ceilf(spm_disp * 2.0f) / 2.0f;
+                if (isfinite(spm_disp))
+                    spm_disp = ceilf(spm_disp * 2.0f) / 2.0f;
 
                 bool recording = s_activity_recording;
                 float pace = (speed_mps > 0.2f) ? (500.0f / speed_mps) : NAN;
+                float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : 0.0f;
 
                 data_values_t v = {
                     .time_s = recording ? s_session_time_s : NAN,
                     .distance_m = recording ? s_activity.distance_m : NAN,
                     .pace_s_per_500m = recording ? pace : NAN,
+                    .avg_pace_s_per_500m = recording ? avg_pace_s : NAN,
                     .speed_mps = recording ? speed_mps : NAN,
                     .spm = spm_disp,
                     .power_w = NAN,
@@ -812,21 +872,24 @@ static void init_touch_and_lvgl_input(void)
 static uint8_t calc_dotw(uint16_t y, uint8_t m, uint8_t d)
 {
     // Sakamoto: returns 0=Sunday .. 6=Saturday
-    static const uint8_t t[] = {0,3,2,5,0,3,5,1,4,6,2,4};
+    static const uint8_t t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
     y -= (m < 3);
-    return (uint8_t)((y + y/4 - y/100 + y/400 + t[m - 1] + d) % 7);
+    return (uint8_t)((y + y / 4 - y / 100 + y / 400 + t[m - 1] + d) % 7);
 }
 
 static datetime_t app_default_datetime(void)
 {
     datetime_t dt = {
-        .year = 2025, .month = 12, .day = 27,
-        .hour = 12, .minute = 0, .second = 0,
+        .year = 2025,
+        .month = 12,
+        .day = 27,
+        .hour = 12,
+        .minute = 0,
+        .second = 0,
     };
     dt.dotw = calc_dotw(dt.year, dt.month, dt.day); // 2025-12-27 => 6 (Sat)
     return dt;
 }
-
 
 static esp_err_t app_set_time_from_rtc(void)
 {
@@ -836,55 +899,59 @@ static esp_err_t app_set_time_from_rtc(void)
 
     bool valid = false;
     esp_err_t err = PCF85063_is_time_valid(&valid);
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
+    {
         ESP_LOGW(TAG, "RTC validity check failed: %s", esp_err_to_name(err));
         return err;
     }
 
-    if (!valid) {
-    datetime_t def = app_default_datetime();
+    if (!valid)
+    {
+        datetime_t def = app_default_datetime();
 
-    ESP_LOGW(TAG,
-             "RTC time invalid (OSF set). Seeding RTC to default: %04u-%02u-%02u %02u:%02u:%02u",
-             (unsigned)def.year, (unsigned)def.month, (unsigned)def.day,
-             (unsigned)def.hour, (unsigned)def.minute, (unsigned)def.second);
+        ESP_LOGW(TAG,
+                 "RTC time invalid (OSF set). Seeding RTC to default: %04u-%02u-%02u %02u:%02u:%02u",
+                 (unsigned)def.year, (unsigned)def.month, (unsigned)def.day,
+                 (unsigned)def.hour, (unsigned)def.minute, (unsigned)def.second);
 
-    esp_err_t se = PCF85063_set_all(def);   // writes full datetime + clears OSF
-    if (se != ESP_OK) {
-        ESP_LOGW(TAG, "RTC seed failed: %s (system time not updated)", esp_err_to_name(se));
-        return se;
+        esp_err_t se = PCF85063_set_all(def); // writes full datetime + clears OSF
+        if (se != ESP_OK)
+        {
+            ESP_LOGW(TAG, "RTC seed failed: %s (system time not updated)", esp_err_to_name(se));
+            return se;
+        }
+
+        // Now treat as valid and continue to read RTC + set system time
+        valid = true;
     }
-
-    // Now treat as valid and continue to read RTC + set system time
-    valid = true;
-}
 
     datetime_t dt;
     err = PCF85063_read_time(&dt);
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
+    {
         ESP_LOGW(TAG, "RTC read failed: %s", esp_err_to_name(err));
         return err;
     }
 
     struct tm tm_local = {0};
     tm_local.tm_year = (int)dt.year - 1900;
-    tm_local.tm_mon  = (int)dt.month - 1;
+    tm_local.tm_mon = (int)dt.month - 1;
     tm_local.tm_mday = (int)dt.day;
     tm_local.tm_hour = (int)dt.hour;
-    tm_local.tm_min  = (int)dt.minute;
-    tm_local.tm_sec  = (int)dt.second;
+    tm_local.tm_min = (int)dt.minute;
+    tm_local.tm_sec = (int)dt.second;
     tm_local.tm_isdst = -1;
 
     time_t epoch = mktime(&tm_local);
-    if (epoch < 0) {
+    if (epoch < 0)
+    {
         ESP_LOGW(TAG, "mktime() failed, not setting system time");
         return ESP_FAIL;
     }
 
     struct timeval tv = {
         .tv_sec = epoch,
-        .tv_usec = 0
-    };
+        .tv_usec = 0};
     settimeofday(&tv, NULL);
 
     ESP_LOGI(TAG, "System time set from RTC: %04u-%02u-%02u %02u:%02u:%02u",
@@ -919,14 +986,13 @@ void app_main(void)
     init_touch_and_lvgl_input();
     init_imu();
     PCF85063_init(&s_imu_bus);
-    ESP_ERROR_CHECK(nvs_helper_init()); 
+    ESP_ERROR_CHECK(nvs_helper_init());
 
-    
     gps_gtu8_config_t gps_cfg = {
         .uart_num = UART_NUM_1,
-        .tx_gpio = 43,            // board TXD
-        .rx_gpio = 44,            // board RXD
-        .baud = 9600,             // common GT-U8 default
+        .tx_gpio = 43, // board TXD
+        .rx_gpio = 44, // board RXD
+        .baud = 9600,  // common GT-U8 default
         .task_prio = 8,
         .task_stack = 4096,
         .rx_buf_size = 2048,
@@ -958,15 +1024,14 @@ void app_main(void)
         ESP_LOGW(TAG, "SD mount failed: %s (continuing)", esp_err_to_name(sd_err));
     }
 
-    bool saved_dark = nvs_helper_get_dark_mode(); 
+    bool saved_dark = nvs_helper_get_dark_mode();
     ui_set_dark_mode(saved_dark);
     bool auto_rot = nvs_helper_get_auto_rotate();
-    uint8_t saved_val = nvs_helper_get_orientation(); 
+    uint8_t saved_val = nvs_helper_get_orientation();
     ui_set_orientation((ui_orientation_t)saved_val);
     uint32_t saved_split = nvs_helper_get_split_len();
     activity_log_init(&s_act_log); // Ensure log is init'd before setting interval
     activity_log_set_split_interval(&s_act_log, saved_split);
-
 
     ui_register_dark_mode_cb(on_dark_mode_setting_changed);
     ui_register_auto_rotate_cb(on_auto_rotate_setting_changed);
@@ -988,7 +1053,7 @@ void app_main(void)
     xTaskCreate(activity_logger_task, "activity_logger", 6144, NULL, 6, NULL);
     xTaskCreate(activity_worker_task, "activity_worker", 8192, NULL, 9, &s_act_worker_task);
     xTaskCreatePinnedToCore(stroke_task, "stroke",
-                            6144, NULL, 3, NULL, 0);                      
+                            6144, NULL, 3, NULL, 0);
 
     /* app_main can idle */
     while (1)
