@@ -30,6 +30,8 @@ typedef struct {
 void data_page_create(lv_obj_t *parent);
 void data_page_set_orientation(ui_orientation_t o);
 void data_page_set_metrics(const data_metric_t metrics[], size_t count); // per slot
+
+void data_page_set_time_s(float time_s);
 void data_page_set_values(const data_values_t *v);
 void data_page_apply_theme(void);
 

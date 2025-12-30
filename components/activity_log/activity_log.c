@@ -107,9 +107,9 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
     if (!log || !sd || !sd->mounted)
         return ESP_ERR_INVALID_STATE;
 
-    float cached_interval = log->split_interval_m; 
+    float cached_interval = log->split_interval_m;
 
-    activity_log_init(log); 
+    activity_log_init(log);
 
     log->split_interval_m = (cached_interval > 0.1f) ? cached_interval : 1000.0f;
     log->next_split_index = 1;
@@ -157,17 +157,18 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
                 "Stroke Length (m),Stroke Count,gps_lat,gps_lon,Power (W),Drive Time (s),Recovery Time (s),Recovery Ratio\n");
     }
 
-    if (log->f_splits) {
+    if (log->f_splits)
+    {
         // 1. Prepare Metadata Strings
         char time_str[32];
         format_timestamp(start_ts, time_str, sizeof(time_str)); // Uses your existing helper
-        
+
         // 2. Write Metadata Rows (Device Settings)
         fprintf(log->f_splits, "Device Info,ESP32S3-BLE Rowing Speed Coach\n");
         fprintf(log->f_splits, "Session Start,%s\n", time_str);
         fprintf(log->f_splits, "Split Setting,%.0f meters\n", log->split_interval_m); //
         fprintf(log->f_splits, "Activity ID,%u\n", (unsigned int)activity_id);
-        
+
         // 3. Add an empty row for separation (optional but readable)
         fprintf(log->f_splits, "\n");
 
@@ -219,30 +220,29 @@ esp_err_t activity_log_append(activity_log_t *log, const activity_log_row_t *row
         {
             float time_delta = row->session_time_s - log->last_split_time_s;
 
-            // Avoid division by zero
-            float split_pace = 0;
-            if (dist_delta > 0)
-            {
-                // Pace = Time / (Dist / 500)
-                split_pace = time_delta / (dist_delta / 500.0f);
-            }
+            // --- FIX: INTERPOLATION FOR EXACT SPLIT ---
+            // 1. Calculate the ratio of "Excess" (e.g. 100m / 102m = 0.98)
+            float ratio = log->split_interval_m / dist_delta;
 
-            // Create Split Row
+            // 2. Calculate Exact Time for 100m
+            float exact_split_time = time_delta * ratio;
+
+            // 3. Log the EXACT Interval (e.g. 100m)
             activity_log_split_row_t split = {
                 .split_index = log->next_split_index++,
-                .total_dist_m = row->total_distance_m,
-                .split_dist_m = dist_delta,
-                .split_time_s = time_delta,
-                .split_pace_s = split_pace,
-                .avg_spm = row->spm_instant // Simplified: Current SPM is proxy for Avg SPM of split
-                                            // (Ideally caller calculates true avg, but this suffices for dummy data)
-            };
+                .total_dist_m = row->total_distance_m, // Keep Total honest (e.g. 302m)
+                .split_dist_m = log->split_interval_m, // Force "100" in the column
+                .split_time_s = exact_split_time,      // Adjusted time
+                .split_pace_s = exact_split_time / (log->split_interval_m / 500.0f),
+                .avg_spm = row->spm_instant};
 
             activity_log_append_split(log, &split);
 
-            // Update State
-            log->last_split_dist_m = row->total_distance_m;
-            log->last_split_time_s = row->session_time_s;
+            // 4. Reset state effectively
+            // We move the "last marker" forward by exactly 100m (not 102m)
+            // This ensures the NEXT split starts counting from 100m, 200m, etc.
+            log->last_split_dist_m += log->split_interval_m;
+            log->last_split_time_s += exact_split_time;
         }
     }
 

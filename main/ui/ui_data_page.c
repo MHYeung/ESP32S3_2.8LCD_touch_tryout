@@ -507,6 +507,23 @@ void data_page_set_metrics(const data_metric_t metrics[], size_t count)
     lvgl_port_unlock();
 }
 
+void data_page_set_time_s(float time_s)
+{
+    // keep model coherent
+    s_values.time_s = time_s;
+
+    lvgl_port_lock(0);
+
+    int slots = slot_count_for_current_orient();
+    for (int i = 0; i < slots; i++) {
+        if (s_slot_metric[i] == DATA_METRIC_TIME) {
+            apply_metric_to_slot(i);   // only redraw TIME slot(s)
+        }
+    }
+
+    lvgl_port_unlock();
+}
+
 void data_page_set_values(const data_values_t *v)
 {
     if (!v) return;
