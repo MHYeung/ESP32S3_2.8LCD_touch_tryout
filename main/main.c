@@ -622,13 +622,36 @@ static void stroke_task(void *arg)
             // GPS Logic
             gps_fix_t fix;
             bool gps_connected = false;
-            uint8_t gps_bars = 0;
+            uint8_t gps_bars = 0; // 0 means "no fix / searching"
             bool gps_ok = false;
+
             if (gps_gtu8_get_latest(&fix))
             {
                 int64_t age_us = esp_timer_get_time() - fix.rx_time_us;
                 gps_connected = (age_us < 2000000);
-                if (fix.valid_fix && isfinite(fix.speed_mps) && gps_connected)
+
+                if (gps_connected && fix.valid_fix)
+                {
+                    // ok for UI quality
+                    int sats = fix.sats;
+                    float hdop = fix.hdop;
+
+                    if (sats >= 10 && hdop <= 1.2f)
+                        gps_bars = 4;
+                    else if (sats >= 8 && hdop <= 1.8f)
+                        gps_bars = 3;
+                    else if (sats >= 6 && hdop <= 2.8f)
+                        gps_bars = 2;
+                    else
+                        gps_bars = 1;
+                }
+                else if (gps_connected)
+                {
+                    gps_bars = 0; // connected but no fix -> RED dot
+                }
+
+                // your gps_ok logic can stay stricter:
+                if (gps_connected && fix.valid_fix && isfinite(fix.speed_mps))
                 {
                     gps_ok = true;
                     s_gps_lat = fix.lat_deg;
@@ -641,33 +664,24 @@ static void stroke_task(void *arg)
                         s_gps_speed_filt = fix.speed_mps;
                     else
                         s_gps_speed_filt += alpha * (fix.speed_mps - s_gps_speed_filt);
-
-                    // GPS Bar UI
-                    int sats = fix.sats;
-                    float hdop = fix.hdop;
-                    static bool last_conn = false;
-                    static uint8_t last_bars = 0;
-                    if (sats >= 10 && hdop <= 1.2f)
-                        gps_bars = 4;
-                    else if (sats >= 8 && hdop <= 1.8f)
-                        gps_bars = 3;
-                    else if (sats >= 6 && hdop <= 2.8f)
-                        gps_bars = 2;
-                    else
-                        gps_bars = 1;
-                    if (gps_connected != last_conn || gps_bars != last_bars)
-                    {
-                        ui_status_bar_set_gps_default_safe(gps_connected, gps_bars);
-                        last_conn = gps_connected;
-                        last_bars = gps_bars;
-                    }
-                }
-                else if (gps_connected)
-                {
-                    gps_bars = 0; // warning state
                 }
             }
+            else
+            {
+                gps_connected = false;
+                gps_bars = 0;
+            }
 
+            // Always update UI on change
+            static bool last_conn = false;
+            static uint8_t last_bars = 255;
+            if (gps_connected != last_conn || gps_bars != last_bars)
+            {
+                ui_status_bar_set_gps_default_safe(gps_connected, gps_bars);
+                last_conn = gps_connected;
+                last_bars = gps_bars;
+            }
+            
             float speed_mps = gps_ok ? s_gps_speed_filt : 0.0f;
             float dist_delta_m = speed_mps * dt_s;
 

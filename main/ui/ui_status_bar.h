@@ -8,7 +8,12 @@
 typedef struct {
     lv_obj_t *root;
     lv_obj_t *time_label;
-    lv_obj_t *gps_label;
+    
+    // GPS widget (icon + color dot)
+    lv_obj_t *gps_cont;
+    lv_obj_t *gps_icon;
+    lv_obj_t *gps_dot;
+
     lv_obj_t *batt_label;
     lv_timer_t *clock_timer;
     lv_timer_t *batt_timer;

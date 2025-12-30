@@ -21,9 +21,9 @@ static uint8_t s_cached_gps_bars = 0;
 static battery_drv_handle_t s_bat = NULL;
 static bool s_bat_inited = false;
 
-static int32_t s_cols_land[] = { LV_GRID_FR(3), LV_GRID_FR(2), LV_GRID_FR(2), LV_GRID_TEMPLATE_LAST };
-static int32_t s_cols_port[] = { LV_GRID_FR(5), LV_GRID_FR(4), LV_GRID_FR(4), LV_GRID_TEMPLATE_LAST };
-static int32_t s_rows[]      = { LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST };
+static int32_t s_cols_land[] = {LV_GRID_FR(3), LV_GRID_FR(2), LV_GRID_FR(2), LV_GRID_TEMPLATE_LAST};
+static int32_t s_cols_port[] = {LV_GRID_FR(5), LV_GRID_FR(4), LV_GRID_FR(4), LV_GRID_TEMPLATE_LAST};
+static int32_t s_rows[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
 void ui_status_bar_set_default(ui_status_bar_t *bar)
 {
@@ -39,7 +39,8 @@ static bool status_bar_is_landscape(void)
 
 static void status_bar_set_time_placeholder(ui_status_bar_t *bar)
 {
-    if (!bar || !bar->time_label) return;
+    if (!bar || !bar->time_label)
+        return;
     lv_label_set_text(bar->time_label, status_bar_is_landscape() ? "--:--:--" : "--:--");
 }
 
@@ -50,23 +51,22 @@ static void status_bar_apply_layout(ui_status_bar_t *bar)
     lv_obj_set_grid_dsc_array(bar->root, land ? s_cols_land : s_cols_port, s_rows);
 
     lv_obj_set_style_pad_hor(bar->root, land ? 10 : 6, 0);
-    lv_obj_set_style_pad_ver(bar->root, land ? 6  : 4, 0);
+    lv_obj_set_style_pad_ver(bar->root, land ? 6 : 4, 0);
 
     lv_label_set_long_mode(bar->time_label, LV_LABEL_LONG_DOT);
-    lv_label_set_long_mode(bar->gps_label,  LV_LABEL_LONG_DOT);
     lv_label_set_long_mode(bar->batt_label, LV_LABEL_LONG_DOT);
 }
-
 
 // One-time init for the whole app (since ADC channel is global/shared)
 static void status_bar_battery_init_once(void)
 {
-    if (s_bat_inited) return;
+    if (s_bat_inited)
+        return;
     s_bat_inited = true;
 
     battery_drv_config_t cfg = {
         .unit = ADC_UNIT_1,
-        .channel = ADC_CHANNEL_7,          // GPIO8 on ESP32-S3
+        .channel = ADC_CHANNEL_7, // GPIO8 on ESP32-S3
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_DEFAULT,
 
@@ -76,13 +76,13 @@ static void status_bar_battery_init_once(void)
 
         // Basic % mapping (tune later)
         .v_empty = 3.30f,
-        .v_full  = 4.20f,
+        .v_full = 4.20f,
 
-        .samples = 8
-    };
+        .samples = 8};
 
     esp_err_t err = battery_drv_init(&cfg, &s_bat);
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
+    {
         ESP_LOGE(TAG, "battery_drv_init failed: %s", esp_err_to_name(err));
         s_bat = NULL;
     }
@@ -91,38 +91,50 @@ static void status_bar_battery_init_once(void)
 static void status_bar_batt_timer_cb(lv_timer_t *t)
 {
     ui_status_bar_t *bar = (ui_status_bar_t *)lv_timer_get_user_data(t);
-    if (!bar || !bar->batt_label) return;
+    if (!bar || !bar->batt_label)
+        return;
 
-    if (!s_bat) {
+    if (!s_bat)
+    {
         // driver not available
         lv_label_set_text(bar->batt_label, "--%");
         return;
     }
 
     int pct = -1;
-    if (battery_drv_read_percent(s_bat, &pct) == ESP_OK) {
-        if (pct < 0) pct = 0;
-        if (pct > 100) pct = 100;
+    if (battery_drv_read_percent(s_bat, &pct) == ESP_OK)
+    {
+        if (pct < 0)
+            pct = 0;
+        if (pct > 100)
+            pct = 100;
         lv_label_set_text_fmt(bar->batt_label, "%d%%", pct);
-    } else {
+    }
+    else
+    {
         lv_label_set_text(bar->batt_label, "--%");
     }
 }
 
-
 static void status_bar_clock_update(ui_status_bar_t *bar)
 {
-    if (!bar || !bar->time_label) return;
+    if (!bar || !bar->time_label)
+        return;
 
     bool valid = false;
-    if (PCF85063_is_time_valid(&valid) == ESP_OK && valid) {
+    if (PCF85063_is_time_valid(&valid) == ESP_OK && valid)
+    {
         datetime_t rtc = {0};
-        if (PCF85063_read_time(&rtc) == ESP_OK) {
+        if (PCF85063_read_time(&rtc) == ESP_OK)
+        {
             char buf[16];
-            if (status_bar_is_landscape()) {
+            if (status_bar_is_landscape())
+            {
                 snprintf(buf, sizeof(buf), "%02u:%02u:%02u",
                          (unsigned)rtc.hour, (unsigned)rtc.minute, (unsigned)rtc.second);
-            } else {
+            }
+            else
+            {
                 snprintf(buf, sizeof(buf), "%02u:%02u",
                          (unsigned)rtc.hour, (unsigned)rtc.minute);
             }
@@ -137,11 +149,12 @@ static void status_bar_clock_update(ui_status_bar_t *bar)
 
 void ui_status_bar_set_orientation(ui_status_bar_t *bar, ui_orientation_t o)
 {
-    if (!bar || !bar->root) return;
+    if (!bar || !bar->root)
+        return;
     bar->orient = o;
 
     status_bar_apply_layout(bar);
-    status_bar_clock_update(bar);   // re-render time in correct format
+    status_bar_clock_update(bar); // re-render time in correct format
 }
 
 static void status_bar_clock_timer_cb(lv_timer_t *t)
@@ -152,7 +165,8 @@ static void status_bar_clock_timer_cb(lv_timer_t *t)
 
 void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
 {
-    if (!bar || !parent) return;
+    if (!bar || !parent)
+        return;
 
     memset(bar, 0, sizeof(*bar));
 
@@ -176,15 +190,37 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
     lv_obj_set_style_text_align(bar->time_label, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_grid_cell(bar->time_label, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_CENTER, 0, 1);
 
-    bar->gps_label = lv_label_create(bar->root);
-    lv_label_set_text(bar->gps_label, "");
-    ui_theme_apply_label(bar->gps_label, true);
-    lv_obj_add_flag(bar->gps_label, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_style_text_align(bar->gps_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(bar->gps_label, LV_LABEL_LONG_CLIP);
-    lv_obj_set_grid_cell(bar->gps_label, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_CENTER, 0, 1);
-    ui_status_bar_set_default(bar);                    
-    ui_status_bar_set_gps_status(bar, s_cached_gps_connected, s_cached_gps_bars);  // apply cached
+    bar->gps_cont = lv_obj_create(bar->root);
+    lv_obj_remove_style_all(bar->gps_cont);
+    lv_obj_set_style_bg_opa(bar->gps_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(bar->gps_cont, 0, 0);
+    lv_obj_set_style_pad_all(bar->gps_cont, 0, 0);
+    lv_obj_set_style_pad_gap(bar->gps_cont, 4, 0);
+    lv_obj_set_layout(bar->gps_cont, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(bar->gps_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(bar->gps_cont,
+                          LV_FLEX_ALIGN_CENTER,  // main axis
+                          LV_FLEX_ALIGN_CENTER,  // cross axis
+                          LV_FLEX_ALIGN_CENTER); // track align
+
+    lv_obj_set_grid_cell(bar->gps_cont,
+                         LV_GRID_ALIGN_STRETCH, 1, 1,
+                         LV_GRID_ALIGN_CENTER, 0, 1);
+
+    bar->gps_icon = lv_label_create(bar->gps_cont);
+    ui_theme_apply_label(bar->gps_icon, true);
+    lv_label_set_text(bar->gps_icon, LV_SYMBOL_GPS);
+
+    bar->gps_dot = lv_obj_create(bar->gps_cont);
+    lv_obj_remove_style_all(bar->gps_dot);
+    lv_obj_set_size(bar->gps_dot, 8, 8);
+    lv_obj_set_style_radius(bar->gps_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(bar->gps_dot, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(bar->gps_dot, 0, 0);
+
+    // keep your default-bar behavior
+    ui_status_bar_set_default(bar);
+    ui_status_bar_set_gps_status(bar, s_cached_gps_connected, s_cached_gps_bars);
 
     bar->batt_label = lv_label_create(bar->root);
     lv_label_set_text(bar->batt_label, "--%");
@@ -194,10 +230,10 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
     lv_obj_set_style_text_align(bar->batt_label, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_grid_cell(bar->batt_label, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_CENTER, 0, 1);
 
-     // Battery auto-update
+    // Battery auto-update
     status_bar_battery_init_once();
     bar->batt_timer = lv_timer_create(status_bar_batt_timer_cb, 5000, bar); // every 5s
-    status_bar_batt_timer_cb(bar->batt_timer); // immediate first refresh
+    status_bar_batt_timer_cb(bar->batt_timer);                              // immediate first refresh
 
     bar->clock_start_ms = lv_tick_get();
     bar->clock_start_sec = 0; /* Dummy start: 12:00:00 */
@@ -209,59 +245,69 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
 
 void ui_status_bar_apply_theme(ui_status_bar_t *bar)
 {
-    if (!bar) return;
+    if (!bar)
+        return;
 
-    if (bar->root) {
+    if (bar->root)
+    {
         ui_theme_apply_surface(bar->root);
         lv_obj_set_style_radius(bar->root, 0, 0);
         lv_obj_set_style_border_width(bar->root, 0, 0);
     }
-    if (bar->time_label) ui_theme_apply_label(bar->time_label, false);
-    if (bar->gps_label) ui_theme_apply_label(bar->gps_label, true);
-    if (bar->batt_label) ui_theme_apply_label(bar->batt_label, true);
+    if (bar->time_label)
+        ui_theme_apply_label(bar->time_label, false);
+    if (bar->gps_icon)
+        ui_theme_apply_label(bar->gps_icon, true);
+    if (bar->batt_label)
+        ui_theme_apply_label(bar->batt_label, true);
 }
 
 void ui_status_bar_set_gps_status(ui_status_bar_t *bar, bool connected, uint8_t bars_0_to_4)
 {
-    if (!bar || !bar->gps_label) return;
+    if (!bar || !bar->gps_dot || !bar->gps_icon) return;
 
-    if (!connected) {
-        lv_label_set_text(bar->gps_label, LV_SYMBOL_GPS " " LV_SYMBOL_CLOSE);
-        return;
+    uint8_t bars = (bars_0_to_4 > 4) ? 4 : bars_0_to_4;
+
+    // Map to quality:
+    // - red: not connected OR connected but no fix (bars==0)
+    // - yellow: weak (1–2)
+    // - green: good (3–4)
+    lv_color_t c;
+    if (!connected || bars == 0) {
+        c = lv_palette_main(LV_PALETTE_RED);
+    } else if (bars <= 2) {
+        c = lv_palette_main(LV_PALETTE_YELLOW);
+    } else {
+        c = lv_palette_main(LV_PALETTE_GREEN);
     }
 
-    uint8_t bars = bars_0_to_4;
-    if (bars > 4) bars = 4;
+    lv_obj_set_style_bg_color(bar->gps_dot, c, 0);
 
-    if (bars == 0) {
-        lv_label_set_text(bar->gps_label, LV_SYMBOL_GPS " " LV_SYMBOL_WARNING);
-        return;
-    }
-
-    char bars_txt[5];
-    for (uint8_t i = 0; i < bars; i++) {
-        bars_txt[i] = '|';
-    }
-    bars_txt[bars] = '\0';
-
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%s %s%s", LV_SYMBOL_GPS, LV_SYMBOL_WIFI, bars_txt);
-    lv_label_set_text(bar->gps_label, buf);
+    // Keep icon stable (no more bars string)
+    lv_label_set_text(bar->gps_icon, LV_SYMBOL_GPS);
 }
+
 
 void ui_status_bar_set_battery(ui_status_bar_t *bar, int percent)
 {
-    if (!bar || !bar->batt_label) return;
+    if (!bar || !bar->batt_label)
+        return;
 
-    if (percent < 0)  { lv_label_set_text(bar->batt_label, "--%"); return; }
-    if (percent > 100) percent = 100;
+    if (percent < 0)
+    {
+        lv_label_set_text(bar->batt_label, "--%");
+        return;
+    }
+    if (percent > 100)
+        percent = 100;
 
     lv_label_set_text_fmt(bar->batt_label, "%d%%", percent);
 }
 
 void ui_status_bar_set_time_base(ui_status_bar_t *bar, uint32_t start_sec)
 {
-    if (!bar) return;
+    if (!bar)
+        return;
     bar->clock_start_ms = lv_tick_get();
     bar->clock_start_sec = start_sec;
     status_bar_clock_update(bar);
@@ -274,9 +320,11 @@ lv_obj_t *ui_status_bar_root(ui_status_bar_t *bar)
 
 void ui_status_bar_force_refresh(ui_status_bar_t *bar)
 {
-    if (!bar) return;
+    if (!bar)
+        return;
     status_bar_clock_update(bar);
-    if (bar->clock_timer) lv_timer_ready(bar->clock_timer); // immediate tick
+    if (bar->clock_timer)
+        lv_timer_ready(bar->clock_timer); // immediate tick
 }
 
 void ui_status_bar_set_gps_default_safe(bool connected, uint8_t bars_0_to_4)
@@ -285,7 +333,8 @@ void ui_status_bar_set_gps_default_safe(bool connected, uint8_t bars_0_to_4)
     s_cached_gps_connected = connected;
     s_cached_gps_bars = (bars_0_to_4 > 4) ? 4 : bars_0_to_4;
 
-    if (!s_default_bar) return;
+    if (!s_default_bar)
+        return;
 
     // Thread-safe LVGL update
     lvgl_port_lock(0);
