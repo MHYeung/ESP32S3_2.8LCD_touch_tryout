@@ -20,6 +20,8 @@ typedef enum {
     UI_PAGE_COUNT,
 } ui_page_t;
 
+bool ui_is_landscape(void);
+
 /* Long Press to shut down */
 typedef void (*ui_shutdown_confirm_cb_t)(void);
 void ui_register_shutdown_confirm_cb(ui_shutdown_confirm_cb_t cb);

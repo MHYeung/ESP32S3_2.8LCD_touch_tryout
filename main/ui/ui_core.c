@@ -61,7 +61,7 @@ static bool s_dark_mode = true;
 /* Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
 
-static bool ui_is_landscape(void)
+bool ui_is_landscape(void)
 {
     if (!s_disp)
         return false;

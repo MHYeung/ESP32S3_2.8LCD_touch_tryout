@@ -172,6 +172,9 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
 
     bar->root = lv_obj_create(parent);
     ui_theme_apply_surface(bar->root);
+    lv_obj_clear_flag(bar->root, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(bar->root, LV_DIR_NONE);
+    lv_obj_set_scrollbar_mode(bar->root, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_width(bar->root, lv_pct(100));
     lv_obj_set_height(bar->root, lv_pct(10));
     lv_obj_set_style_radius(bar->root, 0, 0);
@@ -192,6 +195,9 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
 
     bar->gps_cont = lv_obj_create(bar->root);
     lv_obj_remove_style_all(bar->gps_cont);
+    lv_obj_clear_flag(bar->gps_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(bar->gps_cont, LV_DIR_NONE);
+    lv_obj_set_scrollbar_mode(bar->gps_cont, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_opa(bar->gps_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(bar->gps_cont, 0, 0);
     lv_obj_set_style_pad_all(bar->gps_cont, 0, 0);
