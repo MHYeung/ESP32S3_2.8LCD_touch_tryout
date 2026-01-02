@@ -213,7 +213,7 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
 
     bar->gps_dot = lv_obj_create(bar->gps_cont);
     lv_obj_remove_style_all(bar->gps_dot);
-    lv_obj_set_size(bar->gps_dot, 8, 8);
+    lv_obj_set_size(bar->gps_dot, 10, 10);
     lv_obj_set_style_radius(bar->gps_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(bar->gps_dot, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(bar->gps_dot, 0, 0);
