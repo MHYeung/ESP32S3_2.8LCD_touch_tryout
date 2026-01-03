@@ -7,6 +7,8 @@ idf_component_register(
         "ui/ui_status_bar.c"
         "ui/ui_theme.c"
         "ui/ui_menu_page.c"
+        "ui/ui_activity_summary_page.c"
+        "ui/ui_activity_detail_page.c"
     INCLUDE_DIRS
         "."
         "ui"

@@ -92,33 +92,6 @@ esp_err_t activity_stop(activity_t *a, time_t end_ts);
 static inline bool activity_is_recording(const activity_t *a) {
     return a && a->state == ACTIVITY_STATE_RECORDING;
 }
-
-/**
- * Serialize summary to JSON (single object).
- * buf must be provided by caller.
- */
-esp_err_t activity_to_json(const activity_t *a, char *buf, size_t buf_len);
-
-/**
- * Serialize one-line CSV record (no header).
- */
-esp_err_t activity_to_csv_row(const activity_t *a, char *buf, size_t buf_len);
-
-/**
- * Save files to SD card.
- *
- * - Saves JSON summary to:
- *   <mount>/activities/activity_<id>.json
- *
- * - Optionally appends CSV row to:
- *   <mount>/activities/index.csv
- *
- * (Creates "/activities" directory if missing.)
- */
-esp_err_t activity_save_to_sd(sd_mmc_helper_t *sd,
-                              const activity_t *a,
-                              bool append_index_csv);
-
 #ifdef __cplusplus
 }
 #endif

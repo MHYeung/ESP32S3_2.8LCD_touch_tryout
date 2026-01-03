@@ -370,6 +370,19 @@ static void activity_worker_task(void *arg)
             // The file is now complete and saved on the SD card.
             activity_log_stop(&s_act_log);
 
+            FILE *f = fopen("/sdcard/activities/index.csv", "a");
+            if (f)
+            {
+                fprintf(f, "%lu,%ld,%lu,%.2f,%.2f,%s\n",
+                        (unsigned long)snapshot.id,
+                        (long)snapshot.start_ts,
+                        (unsigned long)snapshot.duration_ms,  //TODO: update to duration second
+                        (double)snapshot.distance_m,
+                        (double)snapshot.avg_speed_mps, //TODO: update to average pace instead of speed
+                        s_act_log.rel_path);
+                fclose(f);
+            }
+
             // REMOVED: activity_save_to_sd(...)
             // We deleted this call because the log file created above IS the save file.
         }
@@ -681,7 +694,7 @@ static void stroke_task(void *arg)
                 last_conn = gps_connected;
                 last_bars = gps_bars;
             }
-            
+
             float speed_mps = gps_ok ? s_gps_speed_filt : 0.0f;
             float dist_delta_m = speed_mps * dt_s;
 

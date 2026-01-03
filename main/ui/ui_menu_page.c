@@ -1,5 +1,6 @@
 // main/ui/ui_menu_page.c
 #include "ui_menu_page.h"
+#include "ui_activity_summary_page.h"
 #include "ui.h"
 #include "ui_status_bar.h"
 #include "ui_theme.h"
@@ -33,7 +34,15 @@ static void menu_icon_cb(lv_event_t *e)
     if (strcmp(id, "settings") == 0)
     {
         ESP_LOGI(TAG, "Settings pressed -> go to settings page");
-        ui_go_to_page(UI_PAGE_SETTINGS, true);
+        ui_go_to_page(UI_SETTINGS_PAGE, true);
+        return;
+    }
+
+    if (strcmp(id, "activity") == 0)
+    {
+        ESP_LOGI(TAG, "Activity pressed -> go to activity summary");
+        activity_summary_page_refresh(); // optional: refresh on enter
+        ui_go_to_page(UI_ACTIVITY_SUMMARY_PAGE, true);
         return;
     }
 

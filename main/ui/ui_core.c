@@ -2,6 +2,8 @@
 #include "ui.h"
 #include "ui_data_page.h"
 #include "ui_settings_page.h"
+#include "ui_activity_summary_page.h"
+#include "ui_activity_detail_page.h"
 #include "ui_menu_page.h"
 #include "ui_theme.h"
 #include "esp_lvgl_port.h"
@@ -14,25 +16,36 @@ static lv_disp_t *s_disp = NULL;
 static lv_obj_t *s_scr = NULL;
 static lv_obj_t *s_page_data = NULL;
 static lv_obj_t *s_page_settings = NULL;
+static lv_obj_t *s_page_menu = NULL;
+static lv_obj_t *s_page_activity_summary = NULL;
+static lv_obj_t *s_page_activity_detail = NULL;
 
 /* Gesture layers */
 static lv_obj_t *s_top_gesture = NULL;
 static lv_obj_t *s_settings_bottom_gesture = NULL;
+static lv_obj_t *s_menu_bottom_gesture = NULL;
+static lv_obj_t *s_activity_sum_bottom_gesture = NULL;
+static lv_obj_t *s_activity_detail_bottom_gesture = NULL;
+
 static ui_page_t s_current_page = UI_PAGE_DATA;
 static bool s_transitioning = false;
 
 /* Gesture State */
 static bool s_top_swipe_armed = false;
 static lv_point_t s_top_swipe_sum = {0};
-static bool s_settings_swipe_armed = false;
-static lv_point_t s_settings_swipe_sum = {0};
-
-static lv_obj_t *s_page_menu = NULL;
-static lv_obj_t *s_menu_bottom_gesture = NULL;
 
 /* Menu gesture state */
 static bool s_menu_swipe_armed = false;
 static lv_point_t s_menu_swipe_sum = {0};
+
+static bool s_settings_swipe_armed = false;
+static lv_point_t s_settings_swipe_sum = {0};
+
+static bool s_act_sum_swipe_armed = false;
+static lv_point_t s_act_sum_swipe_sum = {0};
+
+static bool s_act_detail_swipe_armed = false;
+static lv_point_t s_act_detail_swipe_sum = {0};
 
 /* Shutdown Dialog Handles */
 static ui_shutdown_confirm_cb_t s_shutdown_confirm_cb = NULL;
@@ -150,7 +163,7 @@ static void settings_bottom_swipe_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
-    if (!indev || s_transitioning || s_current_page != UI_PAGE_SETTINGS)
+    if (!indev || s_transitioning || s_current_page != UI_SETTINGS_PAGE)
         return;
 
     if (code == LV_EVENT_PRESSED)
@@ -216,6 +229,76 @@ static void menu_bottom_swipe_event_cb(lv_event_t *e)
     }
 }
 
+static void activity_summary_bottom_swipe_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
+    if (!indev || s_transitioning || s_current_page != UI_ACTIVITY_SUMMARY_PAGE)
+        return;
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        s_act_sum_swipe_sum.x = 0;
+        s_act_sum_swipe_sum.y = 0;
+        s_act_sum_swipe_armed = true;
+    }
+    else if (code == LV_EVENT_RELEASED)
+    {
+        s_act_sum_swipe_armed = false;
+    }
+    else if (code == LV_EVENT_PRESSING && s_act_sum_swipe_armed)
+    {
+        lv_point_t v;
+        lv_indev_get_vect(indev, &v);
+        s_act_sum_swipe_sum.x += v.x;
+        s_act_sum_swipe_sum.y += v.y;
+
+        if (s_act_sum_swipe_sum.y < -30 &&
+            LV_ABS(s_act_sum_swipe_sum.y) > (LV_ABS(s_act_sum_swipe_sum.x) + 10))
+        {
+            s_act_sum_swipe_armed = false;
+            lv_indev_stop_processing(indev);
+            lv_indev_wait_release(indev);
+            ui_go_to_page(UI_PAGE_MENU, true);
+        }
+    }
+}
+
+static void activity_detail_bottom_swipe_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
+    if (!indev || s_transitioning || s_current_page != UI_ACTIVITY_DETAIL_PAGE)
+        return;
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        s_act_detail_swipe_sum.x = 0;
+        s_act_detail_swipe_sum.y = 0;
+        s_act_detail_swipe_armed = true;
+    }
+    else if (code == LV_EVENT_RELEASED)
+    {
+        s_act_detail_swipe_armed = false;
+    }
+    else if (code == LV_EVENT_PRESSING && s_act_detail_swipe_armed)
+    {
+        lv_point_t v;
+        lv_indev_get_vect(indev, &v);
+        s_act_detail_swipe_sum.x += v.x;
+        s_act_detail_swipe_sum.y += v.y;
+
+        if (s_act_detail_swipe_sum.y < -30 &&
+            LV_ABS(s_act_detail_swipe_sum.y) > (LV_ABS(s_act_detail_swipe_sum.x) + 10))
+        {
+            s_act_detail_swipe_armed = false;
+            lv_indev_stop_processing(indev);
+            lv_indev_wait_release(indev);
+            ui_go_to_page(UI_ACTIVITY_SUMMARY_PAGE, true);
+        }
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Page Animations & Layout                                                  */
 /* -------------------------------------------------------------------------- */
@@ -243,7 +326,7 @@ static void ui_pages_relayout(void)
     {
         lv_obj_set_size(s_page_menu, lv_pct(100), lv_pct(100));
 
-        if (s_current_page == UI_PAGE_MENU || s_current_page == UI_PAGE_SETTINGS)
+        if (s_current_page == UI_PAGE_MENU || s_current_page == UI_SETTINGS_PAGE)
         {
             lv_obj_set_pos(s_page_menu, 0, 0);
             lv_obj_clear_flag(s_page_menu, LV_OBJ_FLAG_HIDDEN);
@@ -258,7 +341,7 @@ static void ui_pages_relayout(void)
     if (s_page_settings)
     {
         lv_obj_set_size(s_page_settings, lv_pct(100), lv_pct(100));
-        if (s_current_page == UI_PAGE_SETTINGS)
+        if (s_current_page == UI_SETTINGS_PAGE)
         {
             lv_obj_set_pos(s_page_settings, 0, 0);
             lv_obj_clear_flag(s_page_settings, LV_OBJ_FLAG_HIDDEN);
@@ -267,6 +350,36 @@ static void ui_pages_relayout(void)
         {
             lv_obj_set_pos(s_page_settings, 0, -h);
             lv_obj_add_flag(s_page_settings, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_page_activity_summary)
+    {
+        lv_obj_set_size(s_page_activity_summary, lv_pct(100), lv_pct(100));
+        if (s_current_page == UI_ACTIVITY_SUMMARY_PAGE || s_current_page == UI_ACTIVITY_DETAIL_PAGE)
+        {
+            lv_obj_set_pos(s_page_activity_summary, 0, 0);
+            lv_obj_clear_flag(s_page_activity_summary, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_set_pos(s_page_activity_summary, 0, -h);
+            lv_obj_add_flag(s_page_activity_summary, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_page_activity_detail)
+    {
+        lv_obj_set_size(s_page_activity_detail, lv_pct(100), lv_pct(100));
+        if (s_current_page == UI_ACTIVITY_DETAIL_PAGE)
+        {
+            lv_obj_set_pos(s_page_activity_detail, 0, 0);
+            lv_obj_clear_flag(s_page_activity_detail, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_set_pos(s_page_activity_detail, 0, -h);
+            lv_obj_add_flag(s_page_activity_detail, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -300,11 +413,41 @@ static void ui_pages_relayout(void)
         }
     }
 
+    if (s_activity_sum_bottom_gesture)
+    {
+        lv_obj_set_size(s_activity_sum_bottom_gesture, lv_pct(100), lv_pct(15));
+        lv_obj_align(s_activity_sum_bottom_gesture, LV_ALIGN_BOTTOM_MID, 0, 0);
+        if (s_current_page == UI_ACTIVITY_SUMMARY_PAGE && !s_transitioning)
+        {
+            lv_obj_clear_flag(s_activity_sum_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(s_activity_sum_bottom_gesture);
+        }
+        else
+        {
+            lv_obj_add_flag(s_activity_sum_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_activity_detail_bottom_gesture)
+    {
+        lv_obj_set_size(s_activity_detail_bottom_gesture, lv_pct(100), lv_pct(15));
+        lv_obj_align(s_activity_detail_bottom_gesture, LV_ALIGN_BOTTOM_MID, 0, 0);
+        if (s_current_page == UI_ACTIVITY_DETAIL_PAGE && !s_transitioning)
+        {
+            lv_obj_clear_flag(s_activity_detail_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(s_activity_detail_bottom_gesture);
+        }
+        else
+        {
+            lv_obj_add_flag(s_activity_detail_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     if (s_settings_bottom_gesture)
     {
         lv_obj_set_size(s_settings_bottom_gesture, lv_pct(100), lv_pct(15));
         lv_obj_align(s_settings_bottom_gesture, LV_ALIGN_BOTTOM_MID, 0, 0);
-        if (s_current_page == UI_PAGE_SETTINGS && !s_transitioning)
+        if (s_current_page == UI_SETTINGS_PAGE && !s_transitioning)
         {
             lv_obj_clear_flag(s_settings_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(s_settings_bottom_gesture);
@@ -357,7 +500,11 @@ void ui_go_to_page(ui_page_t target, bool animated)
         return;
     if ((target == UI_PAGE_MENU) && !s_page_menu)
         return;
-    if ((target == UI_PAGE_SETTINGS) && !s_page_settings)
+    if ((target == UI_SETTINGS_PAGE) && !s_page_settings)
+        return;
+    if ((target == UI_ACTIVITY_SUMMARY_PAGE) && !s_page_activity_summary)
+        return;
+    if ((target == UI_ACTIVITY_DETAIL_PAGE) && !s_page_activity_detail)
         return;
 
     lvgl_port_lock(0);
@@ -378,6 +525,10 @@ void ui_go_to_page(ui_page_t target, bool animated)
         lv_obj_add_flag(s_menu_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
     if (s_settings_bottom_gesture)
         lv_obj_add_flag(s_settings_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+    if (s_activity_sum_bottom_gesture)
+        lv_obj_add_flag(s_activity_sum_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+    if (s_activity_detail_bottom_gesture)
+        lv_obj_add_flag(s_activity_detail_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *anim_obj = NULL;
     int32_t from_y = 0, to_y = 0;
@@ -402,8 +553,46 @@ void ui_go_to_page(ui_page_t target, bool animated)
         to_y = -h;
         next_page = UI_PAGE_DATA;
     }
+    // MENU -> ACTIVITY_SUMMARY
+    else if (target == UI_ACTIVITY_SUMMARY_PAGE && s_current_page == UI_PAGE_MENU)
+    {
+        anim_obj = s_page_activity_summary;
+        lv_obj_clear_flag(anim_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(anim_obj, -h);
+        lv_obj_move_foreground(anim_obj);
+        from_y = -h;
+        to_y = 0;
+        next_page = UI_ACTIVITY_SUMMARY_PAGE;
+    }
+    // ACTIVITY_SUMMARY -> MENU
+    else if (target == UI_PAGE_MENU && s_current_page == UI_ACTIVITY_SUMMARY_PAGE)
+    {
+        anim_obj = s_page_activity_summary;
+        from_y = 0;
+        to_y = -h;
+        next_page = UI_PAGE_MENU;
+    }
+    // ACTIVITY_SUMMARY -> ACTIVITY_DETAIL
+    else if (target == UI_ACTIVITY_DETAIL_PAGE && s_current_page == UI_ACTIVITY_SUMMARY_PAGE)
+    {
+        anim_obj = s_page_activity_detail;
+        lv_obj_clear_flag(anim_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(anim_obj, -h);
+        lv_obj_move_foreground(anim_obj);
+        from_y = -h;
+        to_y = 0;
+        next_page = UI_ACTIVITY_DETAIL_PAGE;
+    }
+    // ACTIVITY_DETAIL -> ACTIVITY_SUMMARY
+    else if (target == UI_ACTIVITY_SUMMARY_PAGE && s_current_page == UI_ACTIVITY_DETAIL_PAGE)
+    {
+        anim_obj = s_page_activity_detail;
+        from_y = 0;
+        to_y = -h;
+        next_page = UI_ACTIVITY_SUMMARY_PAGE;
+    }
     // MENU -> SETTINGS (open settings)
-    else if (target == UI_PAGE_SETTINGS && s_current_page == UI_PAGE_MENU)
+    else if (target == UI_SETTINGS_PAGE && s_current_page == UI_PAGE_MENU)
     {
         anim_obj = s_page_settings;
         lv_obj_clear_flag(s_page_settings, LV_OBJ_FLAG_HIDDEN);
@@ -411,10 +600,10 @@ void ui_go_to_page(ui_page_t target, bool animated)
         lv_obj_move_foreground(s_page_settings);
         from_y = -h;
         to_y = 0;
-        next_page = UI_PAGE_SETTINGS;
+        next_page = UI_SETTINGS_PAGE;
     }
     // SETTINGS -> MENU (close settings)
-    else if (target == UI_PAGE_MENU && s_current_page == UI_PAGE_SETTINGS)
+    else if (target == UI_PAGE_MENU && s_current_page == UI_SETTINGS_PAGE)
     {
         anim_obj = s_page_settings;
         from_y = 0;
@@ -728,6 +917,23 @@ static void create_pages_ui(void)
     lv_obj_set_style_border_width(s_page_settings, 0, 0);
     ui_theme_apply_screen(s_page_settings);
     settings_page_create(s_page_settings);
+    // Activity Summary page
+    s_page_activity_summary = lv_obj_create(s_scr);
+    lv_obj_set_size(s_page_activity_summary, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(s_page_activity_summary, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(s_page_activity_summary, 0, 0);
+    lv_obj_set_style_border_width(s_page_activity_summary, 0, 0);
+    ui_theme_apply_screen(s_page_activity_summary);
+    activity_summary_page_create(s_page_activity_summary);
+
+    // Activity Detail page
+    s_page_activity_detail = lv_obj_create(s_scr);
+    lv_obj_set_size(s_page_activity_detail, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(s_page_activity_detail, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(s_page_activity_detail, 0, 0);
+    lv_obj_set_style_border_width(s_page_activity_detail, 0, 0);
+    ui_theme_apply_screen(s_page_activity_detail);
+    activity_detail_page_create(s_page_activity_detail);
 
     // 4. Gestures
     s_top_gesture = lv_obj_create(s_scr);
@@ -740,6 +946,16 @@ static void create_pages_ui(void)
     lv_obj_set_style_bg_opa(s_menu_bottom_gesture, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_menu_bottom_gesture, 0, 0);
     lv_obj_add_event_cb(s_menu_bottom_gesture, menu_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
+
+    s_activity_sum_bottom_gesture = lv_obj_create(s_page_activity_summary);
+    lv_obj_set_style_bg_opa(s_activity_sum_bottom_gesture, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_activity_sum_bottom_gesture, 0, 0);
+    lv_obj_add_event_cb(s_activity_sum_bottom_gesture, activity_summary_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
+
+    s_activity_detail_bottom_gesture = lv_obj_create(s_page_activity_detail);
+    lv_obj_set_style_bg_opa(s_activity_detail_bottom_gesture, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_activity_detail_bottom_gesture, 0, 0);
+    lv_obj_add_event_cb(s_activity_detail_bottom_gesture, activity_detail_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
 
     // Setting bottom gesture (Setting -> Menu)
     s_settings_bottom_gesture = lv_obj_create(s_page_settings);
