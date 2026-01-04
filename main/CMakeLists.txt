@@ -26,6 +26,7 @@ idf_component_register(
         battery_drv
         activity
         activity_log
+        activity_store
         gps_gtu8
         nvs_helper
 )

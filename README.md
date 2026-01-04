@@ -7,6 +7,9 @@ This repository contains a DIY, open-source rowing GPS and stroke coaching proje
 - Display + touch UI using LVGL and an ESP32-S3 driver stack.
 - Responsive UI Data Page with three configurable data slots (time, strokes, SPM by default). See [main/ui/ui_data_page.c](main/ui/ui_data_page.c) for layout and font logic.
 - Activity toast: a small circular status toast used to indicate activity start/stop. Background color shows state (green = start, red = stop); icon text remains white. Configurable in [main/ui/ui_data_page.c](main/ui/ui_data_page.c).
+- Activity logging & splits: persistent CSV logging to SD card with configurable split interval. The logging API and task live in `components/activity_log` (see `activity_log_start`, `activity_log_append`, `activity_log_stop`) and `main` enqueues rows to an activity logger task for durable writes.
+- Activity store & format helpers: `components/activity_store` provides path resolution, split loading and summary calculation (`activity_store_split_t`, `activity_store_summary_t`) plus formatting helpers such as `activity_store_format_dist` and `activity_store_format_pace_500` for UI and export.
+- Activity Summary & Detail pages: browse saved activities on SD, see per-activity summaries (distance, duration, avg pace) and drill into split-level detail. Implemented in `main/ui/ui_core.c` with a menu entry in `main/ui/ui_menu_page.c`.
 - Shutdown prompt with two action buttons (`Shutdown` and `Cancel`). Buttons are styled with colored backgrounds and white labels. See [main/ui/ui_core.c](main/ui/ui_core.c).
 - Dark/light theme support and orientation handling. Theme code lives in [main/ui/ui_theme.c/h](/main/ui/ui_theme.c) (where applicable) and is initialized at startup.
 - Modular components under `components/` for sensors, drivers and helpers (I2C, SD/MMC, RTC, GPS, touch controller, etc.).
@@ -27,6 +30,9 @@ Development workflow: standard ESP-IDF build flow. Use `idf.py build` and `idf.p
 
 Recent development entries (newest first):
 
+- 2026-01-05 — activity_store — added split loading, summary calculation and formatting helpers (path resolution, distance/pace formatting)
+- 2026-01-04 — ui — added Activity Summary & Detail pages and menu integration for browsing activities
+- 2026-01-03 — activity_log — improved split append and logger task export to SD
 - 2025-12-26 — 4add2b3 — activity logger task init
 - 2025-12-26 — dc0840f — added activity saving
 - 2025-12-24 — 337d897 — pwr_key ux

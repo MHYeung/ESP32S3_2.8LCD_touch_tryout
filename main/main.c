@@ -373,18 +373,29 @@ static void activity_worker_task(void *arg)
             FILE *f = fopen("/sdcard/activities/index.csv", "a");
             if (f)
             {
+                uint32_t duration_s = (uint32_t)(snapshot.duration_ms / 1000);
+                float avg_pace_s_per500 = 0.0f;
+                if (snapshot.avg_speed_mps > 0.01f)
+                {
+                    avg_pace_s_per500 = 500.0f / snapshot.avg_speed_mps; // seconds per 500m
+                }
+
+                // IMPORTANT: store the base path (no _Splits/_Strokes suffix)
+                // In your activity_log.c you build: "activities/<base_name>"
+                // Use the field you actually have in activity_log_t:
+                //   - if it's log->filename_base use that
+                //   - if it's log->rel_path rename accordingly
                 fprintf(f, "%lu,%ld,%lu,%.2f,%.2f,%s\n",
                         (unsigned long)snapshot.id,
                         (long)snapshot.start_ts,
-                        (unsigned long)snapshot.duration_ms,  //TODO: update to duration second
+                        (unsigned long)duration_s,
                         (double)snapshot.distance_m,
-                        (double)snapshot.avg_speed_mps, //TODO: update to average pace instead of speed
-                        s_act_log.rel_path);
+                        (double)avg_pace_s_per500,
+                        s_act_log.filename_base /* or s_act_log.rel_path */);
+
                 fclose(f);
             }
 
-            // REMOVED: activity_save_to_sd(...)
-            // We deleted this call because the log file created above IS the save file.
         }
     }
 }

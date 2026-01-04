@@ -356,7 +356,7 @@ static void ui_pages_relayout(void)
     if (s_page_activity_summary)
     {
         lv_obj_set_size(s_page_activity_summary, lv_pct(100), lv_pct(100));
-        if (s_current_page == UI_ACTIVITY_SUMMARY_PAGE || s_current_page == UI_ACTIVITY_DETAIL_PAGE)
+        if (s_current_page == UI_ACTIVITY_SUMMARY_PAGE)
         {
             lv_obj_set_pos(s_page_activity_summary, 0, 0);
             lv_obj_clear_flag(s_page_activity_summary, LV_OBJ_FLAG_HIDDEN);
@@ -586,6 +586,10 @@ void ui_go_to_page(ui_page_t target, bool animated)
     // ACTIVITY_DETAIL -> ACTIVITY_SUMMARY
     else if (target == UI_ACTIVITY_SUMMARY_PAGE && s_current_page == UI_ACTIVITY_DETAIL_PAGE)
     {
+        // Make sure summary is ready behind the outgoing detail page
+        lv_obj_clear_flag(s_page_activity_summary, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(s_page_activity_summary, 0);
+
         anim_obj = s_page_activity_detail;
         from_y = 0;
         to_y = -h;

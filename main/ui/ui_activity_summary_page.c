@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
 
 static const char *TAG = "ui_act_sum";
 
@@ -15,6 +16,8 @@ static const char *TAG = "ui_act_sum";
 #define ACTIVITY_DIR "/sdcard/activities"
 #endif
 #define ACTIVITY_INDEX_PATH ACTIVITY_DIR "/index.csv"
+
+#define MAX_VISIBLE_ACTS 4
 
 typedef struct
 {
@@ -26,7 +29,14 @@ typedef struct
     char file_path[160];
 } activity_meta_t;
 
+typedef struct
+{
+    uint32_t id;
+    char path[160];
+} open_arg_t;
+
 #define ACT_MAX 64
+#define MAX_VISIBLE_ACTS 4
 static activity_meta_t s_items[ACT_MAX];
 static size_t s_item_count = 0;
 
@@ -34,6 +44,24 @@ static lv_obj_t *s_root = NULL;
 static ui_status_bar_t s_status;
 static lv_obj_t *s_list = NULL;
 static lv_obj_t *s_empty_lbl = NULL;
+
+static int cmp_activity_newest_first(const void *a, const void *b)
+{
+    const activity_meta_t *A = (const activity_meta_t *)a;
+    const activity_meta_t *B = (const activity_meta_t *)b;
+
+    if (A->start_ts < B->start_ts)
+        return 1;
+    if (A->start_ts > B->start_ts)
+        return -1;
+
+    // tie-breaker (newer id first)
+    if (A->id < B->id)
+        return 1;
+    if (A->id > B->id)
+        return -1;
+    return 0;
+}
 
 static void fmt_time_hms(char *out, size_t n, uint32_t sec)
 {
@@ -115,37 +143,68 @@ static bool load_index_file(void)
         // parse first 5 fields
         int n = sscanf(line, "%lu,%lu,%lu,%lf,%lf,%159[^\n]",
                        &id, &start_ts, &dur, &dist, &pace, path);
+
         if (n < 6)
             continue;
 
         it->id = (uint32_t)id;
         it->start_ts = (time_t)start_ts;
-        it->duration_s = (uint32_t)dur;
         it->distance_m = (float)dist;
+        it->duration_s = (uint32_t)(dur / 1000);
+
+        // keep the raw field for now; we won't display pace on summary tiles
         it->avg_pace_s_per500 = (float)pace;
+
         strncpy(it->file_path, path, sizeof(it->file_path) - 1);
+
+        // Trim CR/LF/spaces (Windows line endings can break paths)
+        size_t L = strlen(it->file_path);
+        while (L && (it->file_path[L - 1] == '\r' || it->file_path[L - 1] == '\n' || it->file_path[L - 1] == ' '))
+        {
+            it->file_path[--L] = 0;
+        }
+
+        // Backward-compat: if duration looks like ms, convert to seconds
+        if (it->duration_s > 86400UL * 10UL)
+        { // >10 days -> almost certainly ms
+            it->duration_s /= 1000;
+        }
+
+        // Backward-compat: if "pace" field was actually speed (m/s), convert to pace sec/500
+        if (it->avg_pace_s_per500 > 0.01f && it->avg_pace_s_per500 < 30.0f)
+        {
+            it->avg_pace_s_per500 = 500.0f / it->avg_pace_s_per500;
+        }
 
         s_item_count++;
     }
+
+    qsort(s_items, s_item_count, sizeof(s_items[0]), cmp_activity_newest_first);
 
     fclose(f);
     return (s_item_count > 0);
 }
 
+static open_arg_t s_open_arg;
+
+static void open_detail_async(void *p)
+{
+    open_arg_t *a = (open_arg_t *)p;
+    activity_detail_page_open(a->id, a->path);
+}
+
 static void activity_card_cb(lv_event_t *e)
 {
-    uint32_t idx = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
-    if (idx >= s_item_count)
-        return;
-
+    uintptr_t idx = (uintptr_t)lv_event_get_user_data(e);
     activity_meta_t *it = &s_items[idx];
 
-    // Pass the “log id” + file path into detail page
-    activity_detail_page_open(it->id, it->file_path);
-
-    // Navigate
     ui_go_to_page(UI_ACTIVITY_DETAIL_PAGE, true);
+
+    s_open_arg.id = it->id;
+    strncpy(s_open_arg.path, it->file_path, sizeof(s_open_arg.path) - 1);
+    lv_async_call(open_detail_async, &s_open_arg);
 }
+
 static void build_list_ui(void)
 {
     if (!s_list)
@@ -167,77 +226,55 @@ static void build_list_ui(void)
         return;
     }
 
+    // Show newest first, cap to MAX_VISIBLE_ACTS
+    size_t shown = 0;
     for (size_t i = 0; i < s_item_count; i++)
     {
         activity_meta_t *it = &s_items[i];
 
         lv_obj_t *card = lv_btn_create(s_list);
         lv_obj_set_width(card, lv_pct(100));
-        lv_obj_set_height(card, 78);
+        lv_obj_set_height(card, 66);
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE); // IMPORTANT (LVGL v9 default)
+        lv_obj_set_scrollbar_mode(card, LV_SCROLLBAR_MODE_OFF);
         lv_obj_set_style_radius(card, 10, 0);
         lv_obj_set_style_pad_all(card, 10, 0);
-        lv_obj_set_style_pad_column(card, 12, 0);
         lv_obj_set_style_border_width(card, 0, 0);
         ui_theme_apply_surface(card);
 
         lv_obj_add_event_cb(card, activity_card_cb, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
 
-        // Layout inside card
-        lv_obj_set_flex_flow(card, LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-        // Left "thumbnail" column: Distance big
-        lv_obj_t *left = lv_obj_create(card);
-        lv_obj_set_style_bg_opa(left, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(left, 0, 0);
-        lv_obj_set_size(left, 92, LV_SIZE_CONTENT);
-        lv_obj_set_flex_flow(left, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(left, 2, 0);
-
+        // Distance (top-left)
         char dist[24];
         fmt_dist(dist, sizeof(dist), it->distance_m);
-        lv_obj_t *dist_lbl = lv_label_create(left);
+        lv_obj_t *dist_lbl = lv_label_create(card);
         lv_label_set_text(dist_lbl, dist);
         ui_theme_apply_label(dist_lbl, false);
+        lv_obj_align(dist_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
 
-        // Right column: Pace + Time + Date
-        lv_obj_t *right = lv_obj_create(card);
-        lv_obj_set_style_bg_opa(right, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(right, 0, 0);
-        lv_obj_set_flex_grow(right, 1);
-        lv_obj_set_flex_flow(right, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(right, 2, 0);
-
-        char pace[24];
-        fmt_pace_500(pace, sizeof(pace), it->avg_pace_s_per500);
+        // Duration (top-right)
         char dur[24];
         fmt_time_hms(dur, sizeof(dur), it->duration_s);
+        lv_obj_t *dur_lbl = lv_label_create(card);
+        lv_label_set_text(dur_lbl, dur);
+        ui_theme_apply_label(dur_lbl, true);
+        lv_obj_align(dur_lbl, LV_ALIGN_TOP_RIGHT, 0, 0);
 
-        lv_obj_t *p_lbl = lv_label_create(right);
-        lv_label_set_text_fmt(p_lbl, "Pace %s", pace);
-        ui_theme_apply_label(p_lbl, true);
-
-        lv_obj_t *t_lbl = lv_label_create(right);
-        lv_label_set_text_fmt(t_lbl, "Time %s", dur);
-        ui_theme_apply_label(t_lbl, true);
-
-        // Date line (optional)
+        // Date/time (bottom-left)
         struct tm tmv;
         localtime_r(&it->start_ts, &tmv);
         char date[32];
         strftime(date, sizeof(date), "%Y-%m-%d %H:%M", &tmv);
 
-        lv_obj_t *d_lbl = lv_label_create(right);
-        lv_label_set_text(d_lbl, date);
-        ui_theme_apply_label(d_lbl, true);
+        lv_obj_t *date_lbl = lv_label_create(card);
+        lv_label_set_text(date_lbl, date);
+        ui_theme_apply_label(date_lbl, true);
+        lv_obj_align(date_lbl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
-        // Prevent any overflow (important on small width)
-        lv_obj_set_width(p_lbl, lv_pct(100));
-        lv_label_set_long_mode(p_lbl, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(t_lbl, lv_pct(100));
-        lv_label_set_long_mode(t_lbl, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(d_lbl, lv_pct(100));
-        lv_label_set_long_mode(d_lbl, LV_LABEL_LONG_DOT);
+        // Safety: labels should never be scrollable/clickable
+        lv_obj_clear_flag(dist_lbl, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(dur_lbl, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(date_lbl, LV_OBJ_FLAG_SCROLLABLE);
     }
 }
 
@@ -267,9 +304,9 @@ void activity_summary_page_create(lv_obj_t *parent)
     lv_obj_set_flex_grow(body, 1);
     lv_obj_set_style_border_width(body, 0, 0);
     lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(body, 10, 0);
+    lv_obj_set_style_pad_all(body, 8, 0);
     lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(body, 8, 0);
+    lv_obj_set_style_pad_row(body, 6, 0);
 
     // Header row (Back + Title)
     lv_obj_t *hdr = lv_obj_create(body);
@@ -295,9 +332,12 @@ void activity_summary_page_create(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(s_list, LV_OPA_TRANSP, 0);
 
     // Scrollable list
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
+
     lv_obj_add_flag(s_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_ACTIVE);
+    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_ACTIVE); // or AUTO
     lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
 
     activity_summary_page_refresh();
