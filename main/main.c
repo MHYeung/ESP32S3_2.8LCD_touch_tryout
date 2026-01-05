@@ -300,7 +300,7 @@ static void app_pwr_key_setup(void)
         .poll_ms = 20,
         .click_max_ms = 600,
         //.toggle_hold_ms = 1600,
-        .prompt_hold_ms = 3000,
+        .prompt_hold_ms = 2000,
     };
     ESP_ERROR_CHECK(pwr_key_init(&cfg, pwr_evt_cb, NULL));
 

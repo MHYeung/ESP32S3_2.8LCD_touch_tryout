@@ -32,9 +32,10 @@ static lv_obj_t *s_scroller = NULL; // scrollable container holding table
 static lv_obj_t *s_tbl = NULL;      // split rows only (no header row inside)
 static lv_obj_t *s_hint = NULL;     // optional hint when no splits
 static ui_status_bar_t s_status;
+static lv_obj_t *s_hdr_lbl[4] = {0};
 
 #define SPLIT_COLS 4
-static const lv_coord_t s_col_w[SPLIT_COLS] = {30, 56, 72, 72}; // tweak to taste
+static const lv_coord_t s_col_w[SPLIT_COLS] = {30, 60, 70, 70}; // tweak to taste
 static const char *s_col_hdr[SPLIT_COLS] = {"#", "Dist", "Time", "Pace"};
 
 static void format_activity_title(char *out, size_t n)
@@ -110,74 +111,6 @@ static void build_paths(char *strokes, size_t ns, char *splits, size_t nsp)
 {
     snprintf(strokes, ns, "%s_Strokes.csv", s_base_full);
     snprintf(splits, nsp, "%s_Splits.csv", s_base_full);
-}
-
-static bool read_last_stroke_summary(float *out_dist_m, char *out_avg_pace, size_t pace_n)
-{
-    *out_dist_m = 0;
-    snprintf(out_avg_pace, pace_n, "--:--.-");
-
-    char strokes[220], splits[220];
-    build_paths(strokes, sizeof(strokes), splits, sizeof(splits));
-
-    FILE *f = fopen(strokes, "r");
-    if (!f)
-    {
-        ESP_LOGW(TAG, "Cannot open strokes: %s", strokes);
-        return false;
-    }
-
-    char line[320];
-    char last[320] = {0};
-
-    // header
-    if (!fgets(line, sizeof(line), f))
-    {
-        fclose(f);
-        return false;
-    }
-
-    while (fgets(line, sizeof(line), f))
-    {
-        if (line[0] != '\r' && line[0] != '\n')
-        {
-            strncpy(last, line, sizeof(last) - 1);
-        }
-    }
-    fclose(f);
-
-    if (last[0] == 0)
-        return false;
-
-    // columns:
-    // 0 Global Time
-    // 1 Session Time
-    // 2 Distance (m)
-    // 5 Avg Pace (/500m)
-    char tmp[320];
-    strncpy(tmp, last, sizeof(tmp) - 1);
-
-    int col = 0;
-    char *tok = strtok(tmp, ",");
-    char *dist_tok = NULL;
-    char *avgpace_tok = NULL;
-
-    while (tok)
-    {
-        if (col == 2)
-            dist_tok = tok;
-        if (col == 5)
-            avgpace_tok = tok;
-        tok = strtok(NULL, ",");
-        col++;
-    }
-    if (!dist_tok || !avgpace_tok)
-        return false;
-
-    *out_dist_m = (float)atof(dist_tok);
-    snprintf(out_avg_pace, pace_n, "%s", avgpace_tok);
-    trim_tail(out_avg_pace);
-    return true;
 }
 
 static size_t read_splits(split_row_t *rows, size_t cap)
@@ -291,6 +224,12 @@ static void refresh_detail(void)
         lv_table_set_cell_value(s_tbl, (uint16_t)i, 3, rows[i].pace);
     }
 
+    lv_obj_set_style_border_side(s_tbl, LV_BORDER_SIDE_RIGHT | LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_tbl, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_opa(s_tbl, LV_OPA_60, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(s_tbl, lv_palette_main(LV_PALETTE_GREY), LV_PART_ITEMS);
+    lv_obj_set_style_radius(s_tbl, 0, LV_PART_ITEMS);
+
     lv_obj_set_height(s_tbl, LV_SIZE_CONTENT);
     lv_obj_update_layout(s_tbl);
 }
@@ -299,6 +238,86 @@ static void refresh_async(void *p)
 {
     (void)p;
     refresh_detail();
+}
+
+static void relayout(void)
+{
+    if (!s_root)
+        return;
+
+    bool land = ui_is_landscape();
+    lv_coord_t w = lv_obj_get_width(s_root);
+
+    // tighter padding in landscape
+    lv_coord_t pad_lr = land ? 6 : 10;
+    lv_coord_t name_h = land ? 20 : 26;
+    lv_coord_t hdr_h = land ? 20 : 24;
+
+    // Name bar sizing
+    if (s_name_lbl)
+    {
+        lv_obj_set_height(s_name_lbl, name_h);
+        lv_obj_set_style_pad_left(s_name_lbl, pad_lr, 0);
+        lv_obj_set_style_pad_right(s_name_lbl, pad_lr, 0);
+        lv_obj_set_style_pad_top(s_name_lbl, land ? 2 : 4, 0);
+        lv_obj_set_style_pad_bottom(s_name_lbl, 0, 0);
+    }
+
+    // Header row sizing
+    if (s_hdr_row)
+    {
+        lv_obj_set_height(s_hdr_row, hdr_h);
+        lv_obj_set_style_pad_left(s_hdr_row, pad_lr, 0);
+        lv_obj_set_style_pad_right(s_hdr_row, pad_lr, 0);
+        lv_obj_set_style_pad_top(s_hdr_row, 2, 0);
+        lv_obj_set_style_pad_bottom(s_hdr_row, 2, 0);
+    }
+
+    // Column widths depend on screen width/orientation
+    lv_coord_t usable = w - (pad_lr * 2);
+    lv_coord_t c0 = land ? 32 : 28;        // #
+    lv_coord_t c1 = land ? 72 : 56;        // Dist
+    lv_coord_t c2 = land ? 96 : 74;        // Time
+    lv_coord_t c3 = usable - c0 - c1 - c2; // Pace
+
+    // Guard minimum for last column
+    lv_coord_t c3_min = land ? 90 : 70;
+    if (c3 < c3_min)
+    {
+        lv_coord_t need = c3_min - c3;
+        // steal from c2 first, then c1
+        lv_coord_t steal2 = (c2 > (land ? 80 : 60)) ? (need > 20 ? 20 : need) : 0;
+        c2 -= steal2;
+        need -= steal2;
+        lv_coord_t steal1 = (need > 0 && c1 > (land ? 60 : 44)) ? need : 0;
+        c1 -= steal1;
+        need -= steal1;
+        c3 = usable - c0 - c1 - c2;
+    }
+
+    // Apply header label widths
+    if (s_hdr_lbl[0])
+        lv_obj_set_width(s_hdr_lbl[0], c0);
+    if (s_hdr_lbl[1])
+        lv_obj_set_width(s_hdr_lbl[1], c1);
+    if (s_hdr_lbl[2])
+        lv_obj_set_width(s_hdr_lbl[2], c2);
+    if (s_hdr_lbl[3])
+        lv_obj_set_width(s_hdr_lbl[3], c3);
+
+    // Apply table column widths
+    if (s_tbl)
+    {
+        lv_table_set_col_cnt(s_tbl, 4);
+        lv_table_set_col_width(s_tbl, 0, c0);
+        lv_table_set_col_width(s_tbl, 1, c1);
+        lv_table_set_col_width(s_tbl, 2, c2);
+        lv_table_set_col_width(s_tbl, 3, c3);
+    }
+
+    // Ensure hint is centered after rotation
+    if (s_hint)
+        lv_obj_center(s_hint);
 }
 
 void activity_detail_page_open(uint32_t activity_id, const char *csv_path)
@@ -347,7 +366,7 @@ void activity_detail_page_create(lv_obj_t *parent)
     lv_obj_set_style_pad_left(name_bar, 10, 0);
     lv_obj_set_style_pad_right(name_bar, 10, 0);
     lv_obj_set_style_pad_top(name_bar, 4, 0);
-    lv_obj_set_style_pad_bottom(name_bar, 2, 0);
+    lv_obj_set_style_pad_bottom(name_bar, 0, 0);
     lv_obj_clear_flag(name_bar, LV_OBJ_FLAG_SCROLLABLE);
 
     s_name_lbl = lv_label_create(name_bar);
@@ -361,22 +380,22 @@ void activity_detail_page_create(lv_obj_t *parent)
     lv_obj_set_width(s_hdr_row, lv_pct(100));
     lv_obj_set_height(s_hdr_row, 24);
     lv_obj_set_style_border_width(s_hdr_row, 0, 0);
-    lv_obj_set_style_pad_left(s_hdr_row, 6, 0);
-    lv_obj_set_style_pad_right(s_hdr_row, 6, 0);
+    lv_obj_set_style_pad_left(s_hdr_row, 4, 0);
+    lv_obj_set_style_pad_right(s_hdr_row, 4, 0);
     lv_obj_set_style_pad_top(s_hdr_row, 2, 0);
-    lv_obj_set_style_pad_bottom(s_hdr_row, 2, 0);
+    lv_obj_set_style_pad_bottom(s_hdr_row, 1, 0);
     ui_theme_apply_surface(s_hdr_row); // looks like a header strip
     lv_obj_clear_flag(s_hdr_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(s_hdr_row, LV_FLEX_FLOW_ROW);
 
     for (int c = 0; c < SPLIT_COLS; c++)
     {
-        lv_obj_t *lbl = lv_label_create(s_hdr_row);
-        ui_theme_apply_label(lbl, true);
-        lv_label_set_text(lbl, s_col_hdr[c]);
-        lv_obj_set_width(lbl, s_col_w[c]);
-        lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
-        lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
+        s_hdr_lbl[c] = lv_label_create(s_hdr_row);
+        ui_theme_apply_label(s_hdr_lbl[c], true);
+        lv_label_set_text(s_hdr_lbl[c], s_col_hdr[c]);
+        lv_obj_set_width(s_hdr_lbl[c], s_col_w[c]);
+        lv_obj_set_style_text_align(s_hdr_lbl[c], LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(s_hdr_lbl[c], LV_LABEL_LONG_CLIP);
     }
 
     // Scrollable area (this scrolls; header does not)
@@ -414,4 +433,25 @@ void activity_detail_page_create(lv_obj_t *parent)
 
     // start empty
     lv_table_set_row_cnt(s_tbl, 0);
+
+    relayout();
+}
+
+void activity_detail_page_apply_theme(void)
+{
+    if (!s_root)
+        return;
+    ui_status_bar_apply_theme(&s_status);
+    // s_hdr_row uses ui_theme_apply_surface at creation; if theme changes at runtime
+    // and you want it to re-apply, call ui_theme_apply_surface(s_hdr_row) here.
+    if (s_hdr_row)
+        ui_theme_apply_surface(s_hdr_row);
+}
+
+void activity_detail_page_on_orientation_changed(void)
+{
+    if (!s_root)
+        return;
+    ui_status_bar_force_refresh(&s_status);
+    relayout();
 }

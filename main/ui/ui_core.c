@@ -115,6 +115,8 @@ void ui_set_dark_mode(bool enabled)
     data_page_apply_theme();
     settings_page_apply_theme();
     menu_page_apply_theme();
+    activity_summary_page_apply_theme();
+    activity_detail_page_apply_theme();
     lvgl_port_unlock();
 }
 
@@ -486,7 +488,8 @@ void ui_set_orientation(ui_orientation_t o)
     ui_relayout_dialogs();
     menu_page_on_orientation_changed();
     settings_page_on_orientation_changed();
-
+    activity_summary_page_on_orientation_changed();
+    activity_detail_page_on_orientation_changed();
     lvgl_port_unlock();
 
     data_page_set_orientation(o);
