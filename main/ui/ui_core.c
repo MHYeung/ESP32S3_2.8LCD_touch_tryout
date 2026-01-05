@@ -31,7 +31,6 @@ static lv_obj_t *s_settings_bottom_gesture = NULL;
 static lv_obj_t *s_menu_bottom_gesture = NULL;
 static lv_obj_t *s_activity_sum_bottom_gesture = NULL;
 static lv_obj_t *s_activity_detail_bottom_gesture = NULL;
-static lv_obj_t *s_interval_setup_bottom_gesture = NULL;
 static lv_obj_t *s_data_right_gesture = NULL;
 static lv_obj_t *s_interval_left_gesture = NULL;
 
@@ -54,9 +53,6 @@ static lv_point_t s_act_sum_swipe_sum = {0};
 
 static bool s_act_detail_swipe_armed = false;
 static lv_point_t s_act_detail_swipe_sum = {0};
-
-static bool s_interval_setup_swipe_armed = false;
-static lv_point_t s_interval_setup_swipe_sum = {0};
 
 static bool s_data_right_swipe_armed = false;
 static lv_point_t s_data_right_swipe_sum = {0};
@@ -316,41 +312,6 @@ static void activity_detail_bottom_swipe_event_cb(lv_event_t *e)
             lv_indev_stop_processing(indev);
             lv_indev_wait_release(indev);
             ui_go_to_page(UI_ACTIVITY_SUMMARY_PAGE, true);
-        }
-    }
-}
-
-static void interval_setup_bottom_swipe_event_cb(lv_event_t *e)
-{
-    lv_event_code_t code = lv_event_get_code(e);
-    lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
-    if (!indev || s_transitioning || s_current_page != UI_INTERVAL_SETUP_PAGE)
-        return;
-
-    if (code == LV_EVENT_PRESSED)
-    {
-        s_interval_setup_swipe_sum.x = 0;
-        s_interval_setup_swipe_sum.y = 0;
-        s_interval_setup_swipe_armed = true;
-    }
-    else if (code == LV_EVENT_RELEASED)
-    {
-        s_interval_setup_swipe_armed = false;
-    }
-    else if (code == LV_EVENT_PRESSING && s_interval_setup_swipe_armed)
-    {
-        lv_point_t v;
-        lv_indev_get_vect(indev, &v);
-        s_interval_setup_swipe_sum.x += v.x;
-        s_interval_setup_swipe_sum.y += v.y;
-
-        if (s_interval_setup_swipe_sum.y < -30 &&
-            LV_ABS(s_interval_setup_swipe_sum.y) > (LV_ABS(s_interval_setup_swipe_sum.x) + 10))
-        {
-            s_interval_setup_swipe_armed = false;
-            lv_indev_stop_processing(indev);
-            lv_indev_wait_release(indev);
-            ui_go_to_page(UI_PAGE_MENU, true);
         }
     }
 }
@@ -618,20 +579,6 @@ static void ui_pages_relayout(void)
         }
     }
 
-    if (s_interval_setup_bottom_gesture)
-    {
-        lv_obj_set_size(s_interval_setup_bottom_gesture, lv_pct(100), lv_pct(15));
-        lv_obj_align(s_interval_setup_bottom_gesture, LV_ALIGN_BOTTOM_MID, 0, 0);
-        if (s_current_page == UI_INTERVAL_SETUP_PAGE && !s_transitioning)
-        {
-            lv_obj_clear_flag(s_interval_setup_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_move_foreground(s_interval_setup_bottom_gesture);
-        }
-        else
-        {
-            lv_obj_add_flag(s_interval_setup_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
 
     if (s_data_right_gesture)
     {
@@ -698,6 +645,11 @@ void ui_set_orientation(ui_orientation_t o)
     lvgl_port_unlock();
 
     data_page_set_orientation(o);
+}
+
+ui_page_t ui_get_current_page(void)
+{
+    return s_current_page;
 }
 
 void ui_go_to_page(ui_page_t target, bool animated)
@@ -851,6 +803,20 @@ void ui_go_to_page(ui_page_t target, bool animated)
         from_y = 0;
         to_y = -h;
         next_page = UI_PAGE_MENU;
+    }
+    // INTERVAL_SETUP -> INTERVAL_DATA (Confirm)
+    else if (target == UI_INTERVAL_DATA_PAGE && s_current_page == UI_INTERVAL_SETUP_PAGE)
+    {
+        anim_obj = s_page_interval_data;
+        lv_obj_clear_flag(anim_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(anim_obj, w, 0);      // start off-screen to the right
+        lv_obj_move_foreground(anim_obj);
+
+        // animate X: w -> 0
+        from_y = w;
+        to_y = 0;
+        next_page = UI_INTERVAL_DATA_PAGE;
+        use_x = true;
     }
     // MENU -> SETTINGS (open settings)
     else if (target == UI_SETTINGS_PAGE && s_current_page == UI_PAGE_MENU)
@@ -1241,12 +1207,6 @@ static void create_pages_ui(void)
     lv_obj_set_style_bg_opa(s_settings_bottom_gesture, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_settings_bottom_gesture, 0, 0);
     lv_obj_add_event_cb(s_settings_bottom_gesture, settings_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
-
-    // Interval setup bottom gesture
-    s_interval_setup_bottom_gesture = lv_obj_create(s_page_interval_setup);
-    lv_obj_set_style_bg_opa(s_interval_setup_bottom_gesture, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_interval_setup_bottom_gesture, 0, 0);
-    lv_obj_add_event_cb(s_interval_setup_bottom_gesture, interval_setup_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
 
     // Data right-edge gesture (swipe left to interval)
     s_data_right_gesture = lv_obj_create(s_page_data);

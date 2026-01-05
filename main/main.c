@@ -21,6 +21,7 @@
 #include "activity_log.h"
 #include "gps_gtu8.h"
 #include "nvs_helper.h"
+#include "interval_program.h"
 
 #include <sys/time.h>
 #include <time.h>
@@ -56,6 +57,7 @@ static const char *TAG = "app";
 typedef enum
 {
     ACT_CMD_START = 0,
+    ACT_CMD_START_INTERVAL,
     ACT_CMD_STOP_SAVE,
 } act_cmd_t;
 
@@ -264,8 +266,14 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
     {
         if (!s_activity_recording)
         {
-            // Start immediately
+            ui_page_t p = ui_get_current_page();
             act_cmd_t cmd = ACT_CMD_START;
+
+            if (p == UI_INTERVAL_DATA_PAGE || p == UI_PAGE_DATA)
+            {
+                cmd = ACT_CMD_START_INTERVAL;
+            }
+
             xQueueSend(s_act_q, &cmd, 0);
         }
         else
@@ -352,6 +360,35 @@ static void activity_worker_task(void *arg)
             ESP_LOGI("ACT", "START id=%lu", (unsigned long)id);
         }
 
+        if (cmd == ACT_CMD_START_INTERVAL)
+        {
+            // Start normal activity logging first (same as ACT_CMD_START)
+            s_activity_recording = true;
+            s_session_time_s = 0.0f;
+
+            ui_go_to_page(UI_INTERVAL_DATA_PAGE, false);
+            interval_program_start();
+            uint32_t id = s_activity_next_id++;
+            activity_init(&s_activity, id);
+            activity_start(&s_activity, time(NULL));
+
+            if (s_sd.mounted)
+            {
+                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id);
+            }
+
+            s_last_session_stroke_count = 0;
+
+            // Start interval program (you likely already have these APIs or can add them)
+            interval_program_start();
+
+            if (s_activity_mutex)
+                xSemaphoreGive(s_activity_mutex);
+
+            data_page_show_activity_toast(true);
+            ESP_LOGI("ACT", "START_INTERVAL id=%lu", (unsigned long)id);
+        }
+
         if (cmd == ACT_CMD_STOP_SAVE)
         {
             s_activity_recording = false;
@@ -395,7 +432,6 @@ static void activity_worker_task(void *arg)
 
                 fclose(f);
             }
-
         }
     }
 }

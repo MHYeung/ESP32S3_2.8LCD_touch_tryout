@@ -21,12 +21,13 @@ typedef enum {
     UI_INTERVAL_SETUP_PAGE,
     UI_SETTINGS_PAGE,
     UI_SENSORS_CONNECTION_PAGE,
-    
+
     UI_ACTIVITY_DETAIL_PAGE,
     UI_PAGE_COUNT,
 } ui_page_t;
 
 bool ui_is_landscape(void);
+ui_page_t ui_get_current_page(void);
 
 /* Long Press to shut down */
 typedef void (*ui_shutdown_confirm_cb_t)(void);
