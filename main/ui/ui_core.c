@@ -4,12 +4,15 @@
 #include "ui_settings_page.h"
 #include "ui_activity_summary_page.h"
 #include "ui_activity_detail_page.h"
+#include "ui_interval_setup_page.h"
+#include "ui_interval_data_page.h"
 #include "ui_menu_page.h"
 #include "ui_theme.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
 #include <string.h>
 #include "esp_log.h"
+#include "interval_program/interval_program.h"
 
 /* Global LVGL handles for the UI core */
 static lv_disp_t *s_disp = NULL;
@@ -19,6 +22,8 @@ static lv_obj_t *s_page_settings = NULL;
 static lv_obj_t *s_page_menu = NULL;
 static lv_obj_t *s_page_activity_summary = NULL;
 static lv_obj_t *s_page_activity_detail = NULL;
+static lv_obj_t *s_page_interval_setup = NULL;
+static lv_obj_t *s_page_interval_data = NULL;
 
 /* Gesture layers */
 static lv_obj_t *s_top_gesture = NULL;
@@ -26,6 +31,9 @@ static lv_obj_t *s_settings_bottom_gesture = NULL;
 static lv_obj_t *s_menu_bottom_gesture = NULL;
 static lv_obj_t *s_activity_sum_bottom_gesture = NULL;
 static lv_obj_t *s_activity_detail_bottom_gesture = NULL;
+static lv_obj_t *s_interval_setup_bottom_gesture = NULL;
+static lv_obj_t *s_data_right_gesture = NULL;
+static lv_obj_t *s_interval_left_gesture = NULL;
 
 static ui_page_t s_current_page = UI_PAGE_DATA;
 static bool s_transitioning = false;
@@ -46,6 +54,15 @@ static lv_point_t s_act_sum_swipe_sum = {0};
 
 static bool s_act_detail_swipe_armed = false;
 static lv_point_t s_act_detail_swipe_sum = {0};
+
+static bool s_interval_setup_swipe_armed = false;
+static lv_point_t s_interval_setup_swipe_sum = {0};
+
+static bool s_data_right_swipe_armed = false;
+static lv_point_t s_data_right_swipe_sum = {0};
+
+static bool s_interval_left_swipe_armed = false;
+static lv_point_t s_interval_left_swipe_sum = {0};
 
 /* Shutdown Dialog Handles */
 static ui_shutdown_confirm_cb_t s_shutdown_confirm_cb = NULL;
@@ -117,6 +134,8 @@ void ui_set_dark_mode(bool enabled)
     menu_page_apply_theme();
     activity_summary_page_apply_theme();
     activity_detail_page_apply_theme();
+    interval_setup_page_apply_theme();
+    interval_data_page_apply_theme();
     lvgl_port_unlock();
 }
 
@@ -301,10 +320,118 @@ static void activity_detail_bottom_swipe_event_cb(lv_event_t *e)
     }
 }
 
+static void interval_setup_bottom_swipe_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
+    if (!indev || s_transitioning || s_current_page != UI_INTERVAL_SETUP_PAGE)
+        return;
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        s_interval_setup_swipe_sum.x = 0;
+        s_interval_setup_swipe_sum.y = 0;
+        s_interval_setup_swipe_armed = true;
+    }
+    else if (code == LV_EVENT_RELEASED)
+    {
+        s_interval_setup_swipe_armed = false;
+    }
+    else if (code == LV_EVENT_PRESSING && s_interval_setup_swipe_armed)
+    {
+        lv_point_t v;
+        lv_indev_get_vect(indev, &v);
+        s_interval_setup_swipe_sum.x += v.x;
+        s_interval_setup_swipe_sum.y += v.y;
+
+        if (s_interval_setup_swipe_sum.y < -30 &&
+            LV_ABS(s_interval_setup_swipe_sum.y) > (LV_ABS(s_interval_setup_swipe_sum.x) + 10))
+        {
+            s_interval_setup_swipe_armed = false;
+            lv_indev_stop_processing(indev);
+            lv_indev_wait_release(indev);
+            ui_go_to_page(UI_PAGE_MENU, true);
+        }
+    }
+}
+
+static void data_right_swipe_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
+    if (!indev || s_transitioning || s_current_page != UI_PAGE_DATA)
+        return;
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        s_data_right_swipe_sum.x = 0;
+        s_data_right_swipe_sum.y = 0;
+        s_data_right_swipe_armed = true;
+    }
+    else if (code == LV_EVENT_RELEASED)
+    {
+        s_data_right_swipe_armed = false;
+    }
+    else if (code == LV_EVENT_PRESSING && s_data_right_swipe_armed)
+    {
+        lv_point_t v;
+        lv_indev_get_vect(indev, &v);
+        s_data_right_swipe_sum.x += v.x;
+        s_data_right_swipe_sum.y += v.y;
+
+        // swipe LEFT to open interval data
+        if (s_data_right_swipe_sum.x < -30 &&
+            LV_ABS(s_data_right_swipe_sum.x) > (LV_ABS(s_data_right_swipe_sum.y) + 10))
+        {
+            s_data_right_swipe_armed = false;
+            lv_indev_stop_processing(indev);
+            lv_indev_wait_release(indev);
+            ui_go_to_page(UI_INTERVAL_DATA_PAGE, true);
+        }
+    }
+}
+
+static void interval_left_swipe_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
+    if (!indev || s_transitioning || s_current_page != UI_INTERVAL_DATA_PAGE)
+        return;
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        s_interval_left_swipe_sum.x = 0;
+        s_interval_left_swipe_sum.y = 0;
+        s_interval_left_swipe_armed = true;
+    }
+    else if (code == LV_EVENT_RELEASED)
+    {
+        s_interval_left_swipe_armed = false;
+    }
+    else if (code == LV_EVENT_PRESSING && s_interval_left_swipe_armed)
+    {
+        lv_point_t v;
+        lv_indev_get_vect(indev, &v);
+        s_interval_left_swipe_sum.x += v.x;
+        s_interval_left_swipe_sum.y += v.y;
+
+        // swipe RIGHT back to data
+        if (s_interval_left_swipe_sum.x > 30 &&
+            LV_ABS(s_interval_left_swipe_sum.x) > (LV_ABS(s_interval_left_swipe_sum.y) + 10))
+        {
+            s_interval_left_swipe_armed = false;
+            lv_indev_stop_processing(indev);
+            lv_indev_wait_release(indev);
+            ui_go_to_page(UI_PAGE_DATA, true);
+        }
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Page Animations & Layout                                                  */
 /* -------------------------------------------------------------------------- */
 
+static void anim_set_x(void *var, int32_t v) { lv_obj_set_x((lv_obj_t *)var, (lv_coord_t)v); }
 static void anim_set_y(void *var, int32_t v) { lv_obj_set_y((lv_obj_t *)var, (lv_coord_t)v); }
 static void anim_done_cb(lv_anim_t *a)
 {
@@ -317,6 +444,7 @@ static void ui_pages_relayout(void)
     if (!s_scr)
         return;
     lv_coord_t h = lv_obj_get_height(s_scr);
+    lv_coord_t w = lv_obj_get_width(s_scr);
 
     if (s_page_data)
     {
@@ -324,11 +452,26 @@ static void ui_pages_relayout(void)
         lv_obj_set_pos(s_page_data, 0, 0);
     }
 
+    if (s_page_interval_data)
+    {
+        lv_obj_set_size(s_page_interval_data, lv_pct(100), lv_pct(100));
+        if (s_current_page == UI_INTERVAL_DATA_PAGE)
+        {
+            lv_obj_set_pos(s_page_interval_data, 0, 0);
+            lv_obj_clear_flag(s_page_interval_data, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_set_pos(s_page_interval_data, w, 0);
+            lv_obj_add_flag(s_page_interval_data, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     if (s_page_menu)
     {
         lv_obj_set_size(s_page_menu, lv_pct(100), lv_pct(100));
 
-        if (s_current_page == UI_PAGE_MENU || s_current_page == UI_SETTINGS_PAGE)
+        if (s_current_page == UI_PAGE_MENU || s_current_page == UI_SETTINGS_PAGE || s_current_page == UI_INTERVAL_SETUP_PAGE)
         {
             lv_obj_set_pos(s_page_menu, 0, 0);
             lv_obj_clear_flag(s_page_menu, LV_OBJ_FLAG_HIDDEN);
@@ -352,6 +495,21 @@ static void ui_pages_relayout(void)
         {
             lv_obj_set_pos(s_page_settings, 0, -h);
             lv_obj_add_flag(s_page_settings, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_page_interval_setup)
+    {
+        lv_obj_set_size(s_page_interval_setup, lv_pct(100), lv_pct(100));
+        if (s_current_page == UI_INTERVAL_SETUP_PAGE)
+        {
+            lv_obj_set_pos(s_page_interval_setup, 0, 0);
+            lv_obj_clear_flag(s_page_interval_setup, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_set_pos(s_page_interval_setup, 0, -h);
+            lv_obj_add_flag(s_page_interval_setup, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -459,6 +617,51 @@ static void ui_pages_relayout(void)
             lv_obj_add_flag(s_settings_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
         }
     }
+
+    if (s_interval_setup_bottom_gesture)
+    {
+        lv_obj_set_size(s_interval_setup_bottom_gesture, lv_pct(100), lv_pct(15));
+        lv_obj_align(s_interval_setup_bottom_gesture, LV_ALIGN_BOTTOM_MID, 0, 0);
+        if (s_current_page == UI_INTERVAL_SETUP_PAGE && !s_transitioning)
+        {
+            lv_obj_clear_flag(s_interval_setup_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(s_interval_setup_bottom_gesture);
+        }
+        else
+        {
+            lv_obj_add_flag(s_interval_setup_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_data_right_gesture)
+    {
+        lv_obj_set_size(s_data_right_gesture, lv_pct(15), lv_pct(100));
+        lv_obj_align(s_data_right_gesture, LV_ALIGN_RIGHT_MID, 0, 0);
+        if (s_current_page == UI_PAGE_DATA && !s_transitioning)
+        {
+            lv_obj_clear_flag(s_data_right_gesture, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(s_data_right_gesture);
+        }
+        else
+        {
+            lv_obj_add_flag(s_data_right_gesture, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_interval_left_gesture)
+    {
+        lv_obj_set_size(s_interval_left_gesture, lv_pct(15), lv_pct(100));
+        lv_obj_align(s_interval_left_gesture, LV_ALIGN_LEFT_MID, 0, 0);
+        if (s_current_page == UI_INTERVAL_DATA_PAGE && !s_transitioning)
+        {
+            lv_obj_clear_flag(s_interval_left_gesture, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(s_interval_left_gesture);
+        }
+        else
+        {
+            lv_obj_add_flag(s_interval_left_gesture, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 
 void ui_set_orientation(ui_orientation_t o)
@@ -490,6 +693,8 @@ void ui_set_orientation(ui_orientation_t o)
     settings_page_on_orientation_changed();
     activity_summary_page_on_orientation_changed();
     activity_detail_page_on_orientation_changed();
+    interval_setup_page_on_orientation_changed();
+    interval_data_page_on_orientation_changed();
     lvgl_port_unlock();
 
     data_page_set_orientation(o);
@@ -509,9 +714,14 @@ void ui_go_to_page(ui_page_t target, bool animated)
         return;
     if ((target == UI_ACTIVITY_DETAIL_PAGE) && !s_page_activity_detail)
         return;
+    if ((target == UI_INTERVAL_SETUP_PAGE) && !s_page_interval_setup)
+        return;
+    if ((target == UI_INTERVAL_DATA_PAGE) && !s_page_interval_data)
+        return;
 
     lvgl_port_lock(0);
     lv_coord_t h = lv_obj_get_height(s_scr);
+    lv_coord_t w = lv_obj_get_width(s_scr);
 
     if (!animated)
     {
@@ -533,6 +743,7 @@ void ui_go_to_page(ui_page_t target, bool animated)
     if (s_activity_detail_bottom_gesture)
         lv_obj_add_flag(s_activity_detail_bottom_gesture, LV_OBJ_FLAG_HIDDEN);
 
+    bool use_x = false;
     lv_obj_t *anim_obj = NULL;
     int32_t from_y = 0, to_y = 0;
     ui_page_t next_page = target;
@@ -555,6 +766,30 @@ void ui_go_to_page(ui_page_t target, bool animated)
         from_y = 0;
         to_y = -h;
         next_page = UI_PAGE_DATA;
+    }
+    else if (target == UI_INTERVAL_DATA_PAGE && s_current_page == UI_PAGE_DATA)
+    {
+        anim_obj = s_page_interval_data;
+        lv_obj_clear_flag(anim_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(anim_obj, w, 0);
+        lv_obj_move_foreground(anim_obj);
+
+        // we'll animate X, reusing from_y/to_y vars as from_x/to_x
+        from_y = w;
+        to_y = 0;
+        next_page = UI_INTERVAL_DATA_PAGE;
+
+        // special flag: animate x
+        // (see below where you set exec_cb)
+        use_x = true;
+    }
+    else if (target == UI_PAGE_DATA && s_current_page == UI_INTERVAL_DATA_PAGE)
+    {
+        anim_obj = s_page_interval_data;
+        from_y = 0;
+        to_y = w;
+        next_page = UI_PAGE_DATA;
+        use_x = true;
     }
     // MENU -> ACTIVITY_SUMMARY
     else if (target == UI_ACTIVITY_SUMMARY_PAGE && s_current_page == UI_PAGE_MENU)
@@ -598,6 +833,25 @@ void ui_go_to_page(ui_page_t target, bool animated)
         to_y = -h;
         next_page = UI_ACTIVITY_SUMMARY_PAGE;
     }
+    // Menu -> Interval Setup
+    else if (target == UI_INTERVAL_SETUP_PAGE && s_current_page == UI_PAGE_MENU)
+    {
+        anim_obj = s_page_interval_setup;
+        lv_obj_clear_flag(anim_obj, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(anim_obj, -h);
+        lv_obj_move_foreground(anim_obj);
+        from_y = -h;
+        to_y = 0;
+        next_page = UI_INTERVAL_SETUP_PAGE;
+    }
+    // Interval Setup -> Menu
+    else if (target == UI_PAGE_MENU && s_current_page == UI_INTERVAL_SETUP_PAGE)
+    {
+        anim_obj = s_page_interval_setup;
+        from_y = 0;
+        to_y = -h;
+        next_page = UI_PAGE_MENU;
+    }
     // MENU -> SETTINGS (open settings)
     else if (target == UI_SETTINGS_PAGE && s_current_page == UI_PAGE_MENU)
     {
@@ -630,11 +884,11 @@ void ui_go_to_page(ui_page_t target, bool animated)
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, anim_obj);
-    lv_anim_set_exec_cb(&a, anim_set_y);
+    lv_anim_set_exec_cb(&a, use_x ? anim_set_x : anim_set_y);
+    lv_anim_set_values(&a, from_y, to_y);
     lv_anim_set_time(&a, 300);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
     lv_anim_set_completed_cb(&a, anim_done_cb);
-    lv_anim_set_values(&a, from_y, to_y);
     lv_anim_start(&a);
 
     lvgl_port_unlock();
@@ -942,6 +1196,24 @@ static void create_pages_ui(void)
     ui_theme_apply_screen(s_page_activity_detail);
     activity_detail_page_create(s_page_activity_detail);
 
+    // Interval Setup page
+    s_page_interval_setup = lv_obj_create(s_scr);
+    lv_obj_set_size(s_page_interval_setup, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(s_page_interval_setup, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(s_page_interval_setup, 0, 0);
+    lv_obj_set_style_border_width(s_page_interval_setup, 0, 0);
+    ui_theme_apply_screen(s_page_interval_setup);
+    interval_setup_page_create(s_page_interval_setup);
+
+    // Interval Data page (gallery)
+    s_page_interval_data = lv_obj_create(s_scr);
+    lv_obj_set_size(s_page_interval_data, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(s_page_interval_data, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(s_page_interval_data, 0, 0);
+    lv_obj_set_style_border_width(s_page_interval_data, 0, 0);
+    ui_theme_apply_screen(s_page_interval_data);
+    interval_data_page_create(s_page_interval_data);
+
     // 4. Gestures
     s_top_gesture = lv_obj_create(s_scr);
     lv_obj_set_style_bg_opa(s_top_gesture, LV_OPA_TRANSP, 0);
@@ -970,6 +1242,24 @@ static void create_pages_ui(void)
     lv_obj_set_style_border_width(s_settings_bottom_gesture, 0, 0);
     lv_obj_add_event_cb(s_settings_bottom_gesture, settings_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
 
+    // Interval setup bottom gesture
+    s_interval_setup_bottom_gesture = lv_obj_create(s_page_interval_setup);
+    lv_obj_set_style_bg_opa(s_interval_setup_bottom_gesture, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_interval_setup_bottom_gesture, 0, 0);
+    lv_obj_add_event_cb(s_interval_setup_bottom_gesture, interval_setup_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
+
+    // Data right-edge gesture (swipe left to interval)
+    s_data_right_gesture = lv_obj_create(s_page_data);
+    lv_obj_set_style_bg_opa(s_data_right_gesture, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_data_right_gesture, 0, 0);
+    lv_obj_add_event_cb(s_data_right_gesture, data_right_swipe_event_cb, LV_EVENT_ALL, NULL);
+
+    // Interval left-edge gesture (swipe right back)
+    s_interval_left_gesture = lv_obj_create(s_page_interval_data);
+    lv_obj_set_style_bg_opa(s_interval_left_gesture, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_interval_left_gesture, 0, 0);
+    lv_obj_add_event_cb(s_interval_left_gesture, interval_left_swipe_event_cb, LV_EVENT_ALL, NULL);
+
     s_current_page = UI_PAGE_DATA;
     ui_pages_relayout();
 }
@@ -980,5 +1270,6 @@ void ui_init(lv_disp_t *disp)
     lvgl_port_lock(0);
     ui_theme_init(s_disp);
     create_pages_ui();
+    interval_program_init();
     lvgl_port_unlock();
 }

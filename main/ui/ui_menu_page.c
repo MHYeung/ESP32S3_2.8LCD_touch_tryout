@@ -46,6 +46,13 @@ static void menu_icon_cb(lv_event_t *e)
         return;
     }
 
+    if (strcmp(id, "interval") == 0)
+    {
+        ESP_LOGI(TAG, "Interval pressed -> go to interval setup");
+        ui_go_to_page(UI_INTERVAL_SETUP_PAGE, true);
+        return;
+    }
+
     // Dummy icons for now
     ESP_LOGI(TAG, "Menu icon pressed: %s (dummy)", id);
 }

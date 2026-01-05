@@ -9,9 +9,13 @@ idf_component_register(
         "ui/ui_menu_page.c"
         "ui/ui_activity_summary_page.c"
         "ui/ui_activity_detail_page.c"
+        "ui/ui_interval_setup_page.c"
+        "ui/ui_interval_data_page.c"
+        "interval_program/interval_program.c"
     INCLUDE_DIRS
         "."
         "ui"
+        "interval_program"
     REQUIRES
         lcd_st7789
         touch_cst328
