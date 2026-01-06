@@ -212,16 +212,16 @@ static void refresh_detail(void)
 
     lv_table_set_row_cnt(s_tbl, (uint16_t)n);
 
-    for (size_t i = 0; i < n; i++)
+    for (size_t i = 1; i < n; i++)
     {
         char c0[8], c1[16];
         snprintf(c0, sizeof(c0), "%d", rows[i].idx);
         snprintf(c1, sizeof(c1), "%.0fm", (double)rows[i].split_m);
 
-        lv_table_set_cell_value(s_tbl, (uint16_t)i, 0, c0);
-        lv_table_set_cell_value(s_tbl, (uint16_t)i, 1, c1);
-        lv_table_set_cell_value(s_tbl, (uint16_t)i, 2, rows[i].split_time);
-        lv_table_set_cell_value(s_tbl, (uint16_t)i, 3, rows[i].pace);
+        lv_table_set_cell_value(s_tbl, (uint16_t)i-1, 0, c0);
+        lv_table_set_cell_value(s_tbl, (uint16_t)i-1, 1, c1);
+        lv_table_set_cell_value(s_tbl, (uint16_t)i-1, 2, rows[i].split_time);
+        lv_table_set_cell_value(s_tbl, (uint16_t)i-1, 3, rows[i].pace);
     }
 
     lv_obj_set_style_border_side(s_tbl, LV_BORDER_SIDE_RIGHT | LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);

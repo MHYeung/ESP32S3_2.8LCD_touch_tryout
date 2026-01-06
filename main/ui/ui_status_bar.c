@@ -280,11 +280,11 @@ void ui_status_bar_set_gps_status(ui_status_bar_t *bar, bool connected, uint8_t 
     // - green: good (3–4)
     lv_color_t c;
     if (!connected || bars == 0) {
-        c = lv_palette_main(LV_PALETTE_RED);
+        c = lv_palette_main(LV_PALETTE_GREEN);
     } else if (bars <= 2) {
         c = lv_palette_main(LV_PALETTE_YELLOW);
     } else {
-        c = lv_palette_main(LV_PALETTE_GREEN);
+        c = lv_palette_main(LV_PALETTE_RED);
     }
 
     lv_obj_set_style_bg_color(bar->gps_dot, c, 0);

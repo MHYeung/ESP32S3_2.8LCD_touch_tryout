@@ -579,7 +579,6 @@ static void ui_pages_relayout(void)
         }
     }
 
-
     if (s_data_right_gesture)
     {
         lv_obj_set_size(s_data_right_gesture, lv_pct(15), lv_pct(100));
@@ -809,7 +808,7 @@ void ui_go_to_page(ui_page_t target, bool animated)
     {
         anim_obj = s_page_interval_data;
         lv_obj_clear_flag(anim_obj, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(anim_obj, w, 0);      // start off-screen to the right
+        lv_obj_set_pos(anim_obj, w, 0); // start off-screen to the right
         lv_obj_move_foreground(anim_obj);
 
         // animate X: w -> 0

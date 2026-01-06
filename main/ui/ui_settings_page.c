@@ -17,7 +17,6 @@ static lv_obj_t *s_root = NULL;
 static lv_obj_t *s_body = NULL;
 static ui_status_bar_t s_status = {0};
 static lv_obj_t *s_dark_mode_sw = NULL;
-static lv_obj_t *s_device_lbl = NULL;
 static lv_obj_t *s_split_val_lbl = NULL;
 
 // Default split is 1000m until changed
@@ -299,24 +298,24 @@ void settings_page_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_body, 0, 0);
     lv_obj_add_flag(s_body, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Split Length Row
+    s_split_val_lbl = create_clickable_row(s_body, "Split Length", split_row_click_cb);
+    update_split_label_text(); 
+
     // Dark Mode Switch (Pass 'is_dark')
     s_dark_mode_sw = create_settings_row(s_body, "Dark Mode", sw_dark_mode_event_cb, is_dark);
     
     // Auto Rotate Switch (Pass 'is_rot')
     create_settings_row(s_body, "Auto Rotate", sw_auto_rotate_event_cb, is_rot);
     
-    // Split Length Row
-    s_split_val_lbl = create_clickable_row(s_body, "Split Length", split_row_click_cb);
-    update_split_label_text(); 
+    
 
-    s_device_lbl = create_value_row(s_body, "Device", "ESP32S3-BLE");
 }
 
 void ui_settings_register_split_length_cb(ui_split_length_cb_t cb) { s_split_cb = cb; }
 
 void settings_page_apply_theme(void) {
     if (s_root) ui_status_bar_apply_theme(&s_status);
-    if (s_device_lbl) ui_theme_apply_label(s_device_lbl, true);
     if (s_split_val_lbl) ui_theme_apply_label(s_split_val_lbl, true);
     settings_page_set_dark_mode_state(ui_get_dark_mode());
 }
