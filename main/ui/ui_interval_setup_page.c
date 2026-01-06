@@ -7,6 +7,16 @@
 
 static lv_obj_t *s_root = NULL;
 static ui_status_bar_t s_sb;
+static lv_obj_t *s_scroll = NULL;
+static lv_obj_t *s_title = NULL;
+static lv_obj_t *s_row_work = NULL;
+static lv_obj_t *s_row_rest = NULL;
+static lv_obj_t *s_line_work = NULL;
+static lv_obj_t *s_line_rest = NULL;
+static lv_obj_t *s_line_rounds = NULL;
+static lv_obj_t *s_rounds_spacer = NULL;
+static lv_obj_t *s_row_rounds = NULL;
+static lv_obj_t *s_btn_row = NULL;
 
 static lv_obj_t *dd_work, *sb_work;
 static lv_obj_t *dd_rest, *sb_rest;
@@ -39,10 +49,10 @@ static void configure_spinbox_for_unit(lv_obj_t *sb, interval_unit_t u)
     }
     else
     {
-        lv_spinbox_set_range(sb, 1, 500);
+        lv_spinbox_set_range(sb, 1, 60);
         lv_spinbox_set_step(sb, 1);
-        lv_spinbox_set_digit_format(sb, 3, 0);
-        lv_spinbox_set_value(sb, 20);
+        lv_spinbox_set_digit_format(sb, 2, 0);
+        lv_spinbox_set_value(sb, 10);
     }
 }
 
@@ -60,15 +70,17 @@ static void dd_changed_cb(lv_event_t *e)
 static void btn_inc_cb(lv_event_t *e) { lv_spinbox_increment(lv_event_get_user_data(e)); }
 static void btn_dec_cb(lv_event_t *e) { lv_spinbox_decrement(lv_event_get_user_data(e)); }
 
-static void make_row(lv_obj_t *parent, const char *title, lv_obj_t **out_dd, lv_obj_t **out_sb)
+static lv_obj_t *make_row(lv_obj_t *parent, const char *title, lv_obj_t **out_dd, lv_obj_t **out_sb,
+                          lv_obj_t **out_line, bool show_dd, lv_obj_t **out_spacer)
 {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_set_width(row, lv_pct(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_pad_all(row, 0, 0);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(row, 4, 0);
+    lv_obj_set_style_pad_row(row, 2, 0);
 
     lv_obj_t *lbl = lv_label_create(row);
     lv_label_set_text(lbl, title);
@@ -76,16 +88,30 @@ static void make_row(lv_obj_t *parent, const char *title, lv_obj_t **out_dd, lv_
 
     lv_obj_t *line = lv_obj_create(row);
     lv_obj_set_width(line, lv_pct(100));
+    lv_obj_set_height(line, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_opa(line, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(line, 0, 0);
     lv_obj_set_style_pad_all(line, 0, 0);
     lv_obj_set_flex_flow(line, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(line, 6, 0);
+    lv_obj_set_style_pad_column(line, 4, 0);
 
-    lv_obj_t *dd = lv_dropdown_create(line);
-    lv_dropdown_set_options(dd, "Time\nDistance\nStrokes");
-    lv_dropdown_set_selected(dd, 0);
-    lv_obj_add_event_cb(dd, dd_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_t *dd = NULL;
+    lv_obj_t *spacer = NULL;
+    if (show_dd)
+    {
+        dd = lv_dropdown_create(line);
+        lv_dropdown_set_options(dd, "Time\nDistance\nStrokes");
+        lv_dropdown_set_selected(dd, 0);
+        lv_obj_add_event_cb(dd, dd_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    }
+    else
+    {
+        spacer = lv_obj_create(line);
+        lv_obj_set_size(spacer, 0, 1);
+        lv_obj_set_style_bg_opa(spacer, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(spacer, 0, 0);
+        lv_obj_set_style_pad_all(spacer, 0, 0);
+    }
 
     lv_obj_t *dec = lv_btn_create(line);
     lv_obj_t *d = lv_label_create(dec);
@@ -104,10 +130,18 @@ static void make_row(lv_obj_t *parent, const char *title, lv_obj_t **out_dd, lv_
     lv_obj_add_event_cb(dec, btn_dec_cb, LV_EVENT_CLICKED, sb);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-    configure_spinbox_for_unit(sb, INTERVAL_UNIT_TIME);
+    if (show_dd)
+        configure_spinbox_for_unit(sb, INTERVAL_UNIT_TIME);
 
-    *out_dd = dd;
-    *out_sb = sb;
+    if (out_dd)
+        *out_dd = dd;
+    if (out_sb)
+        *out_sb = sb;
+    if (out_line)
+        *out_line = line;
+    if (out_spacer)
+        *out_spacer = spacer;
+    return row;
 }
 
 static void confirm_cb(lv_event_t *e)
@@ -139,6 +173,54 @@ static void cancel_cb(lv_event_t *e)
     ui_go_to_page(UI_PAGE_MENU, true);
 }
 
+static void relayout(void)
+{
+    if (!s_root)
+        return;
+
+    bool land = ui_is_landscape();
+    lv_coord_t pad_lr = land ? 6 : 2;
+    lv_coord_t row_pad = land ? 1 : 0;
+    lv_coord_t col_pad = land ? 6 : 4;
+    lv_coord_t dd_w = land ? 108 : 82;
+    lv_coord_t sb_w = land ? 82 : 64;
+
+    if (s_scroll)
+    {
+        lv_obj_set_style_pad_left(s_scroll, pad_lr, 0);
+        lv_obj_set_style_pad_right(s_scroll, pad_lr, 0);
+        lv_obj_set_style_pad_row(s_scroll, land ? 1 : 0, 0);
+    }
+
+    if (s_row_work)
+        lv_obj_set_style_pad_row(s_row_work, row_pad, 0);
+    if (s_row_rest)
+        lv_obj_set_style_pad_row(s_row_rest, row_pad, 0);
+    if (s_line_work)
+        lv_obj_set_style_pad_column(s_line_work, col_pad, 0);
+    if (s_line_rest)
+        lv_obj_set_style_pad_column(s_line_rest, col_pad, 0);
+    if (s_line_rounds)
+        lv_obj_set_style_pad_column(s_line_rounds, col_pad, 0);
+    if (s_row_rounds)
+        lv_obj_set_style_pad_row(s_row_rounds, row_pad, 0);
+    if (s_btn_row)
+        lv_obj_set_style_pad_row(s_btn_row, row_pad, 0);
+
+    if (dd_work)
+        lv_obj_set_width(dd_work, dd_w);
+    if (dd_rest)
+        lv_obj_set_width(dd_rest, dd_w);
+    if (s_rounds_spacer)
+        lv_obj_set_width(s_rounds_spacer, dd_w);
+    if (sb_work)
+        lv_obj_set_width(sb_work, sb_w);
+    if (sb_rest)
+        lv_obj_set_width(sb_rest, sb_w);
+    if (sb_rounds)
+        lv_obj_set_width(sb_rounds, sb_w);
+}
+
 void interval_setup_page_create(lv_obj_t *parent)
 {
     s_root = lv_obj_create(parent);
@@ -153,88 +235,69 @@ void interval_setup_page_create(lv_obj_t *parent)
     ui_status_bar_create(&s_sb, s_root);
 
     // ONE scroll container for everything else
-    lv_obj_t *scroll = lv_obj_create(s_root);
-    lv_obj_set_width(scroll, lv_pct(100));
-    lv_obj_set_flex_grow(scroll, 1); // take remaining height under status bar
-    lv_obj_set_style_bg_opa(scroll, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(scroll, 0, 0);
-    lv_obj_set_style_pad_left(scroll, 2, 0);
-    lv_obj_set_style_pad_right(scroll, 2, 0);
-    lv_obj_set_style_pad_row(scroll, 1, 0);
+    s_scroll = lv_obj_create(s_root);
+    lv_obj_set_width(s_scroll, lv_pct(100));
+    lv_obj_set_flex_grow(s_scroll, 1); // take remaining height under status bar
+    lv_obj_set_style_bg_opa(s_scroll, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_scroll, 0, 0);
+    lv_obj_set_style_pad_left(s_scroll, 2, 0);
+    lv_obj_set_style_pad_right(s_scroll, 2, 0);
+    lv_obj_set_style_pad_row(s_scroll, 1, 0);
 
-    lv_obj_add_flag(scroll, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(scroll, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(scroll, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_add_flag(s_scroll, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(s_scroll, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_scroll, LV_SCROLLBAR_MODE_AUTO);
 
-    lv_obj_set_flex_flow(scroll, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_flow(s_scroll, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_scroll, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
     // Title inside scroll (so everything is one column)
-    lv_obj_t *title = lv_label_create(scroll);
-    lv_label_set_text(title, "Interval Setup");
-    ui_theme_apply_label(title, false);
-    lv_obj_set_height(title, LV_SIZE_CONTENT);
+    s_title = lv_label_create(s_scroll);
+    lv_label_set_text(s_title, "Interval Setup");
+    ui_theme_apply_label(s_title, false);
+    lv_obj_set_height(s_title, LV_SIZE_CONTENT);
 
     // Work / Rest rows
-    make_row(scroll, "Work", &dd_work, &sb_work);
-    make_row(scroll, "Rest", &dd_rest, &sb_rest);
+    s_row_work = make_row(s_scroll, "Work", &dd_work, &sb_work, &s_line_work, true, NULL);
+    s_row_rest = make_row(s_scroll, "Rest", &dd_rest, &sb_rest, &s_line_rest, true, NULL);
+    lv_obj_set_style_text_align(sb_work, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_align(sb_rest, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     // Rounds row
-    lv_obj_t *rrow = lv_obj_create(scroll);
-    lv_obj_set_width(rrow, lv_pct(100));
-    lv_obj_set_style_bg_opa(rrow, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(rrow, 0, 0);
-    lv_obj_set_style_pad_all(rrow, 0, 0);
-    lv_obj_set_flex_flow(rrow, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(rrow, LV_FLEX_ALIGN_SPACE_BETWEEN,
-                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    lv_obj_t *rl = lv_label_create(rrow);
-    lv_label_set_text(rl, "Rounds");
-    ui_theme_apply_label(rl, true);
-
-    lv_obj_t *dec = lv_btn_create(rrow);
-    lv_obj_t *d = lv_label_create(dec);
-    lv_label_set_text(d, "-");
-    lv_obj_center(d);
-
-    sb_rounds = lv_spinbox_create(rrow);
-    lv_obj_set_width(sb_rounds, 76);
+    s_row_rounds = make_row(s_scroll, "Rounds", NULL, &sb_rounds, &s_line_rounds, false, &s_rounds_spacer);
     lv_spinbox_set_range(sb_rounds, 1, 30);
     lv_spinbox_set_step(sb_rounds, 1);
     lv_spinbox_set_digit_format(sb_rounds, 2, 0);
     lv_spinbox_set_value(sb_rounds, 10);
-
-    lv_obj_t *inc = lv_btn_create(rrow);
-    lv_obj_t *i = lv_label_create(inc);
-    lv_label_set_text(i, "+");
-    lv_obj_center(i);
-
-    lv_obj_add_event_cb(inc, btn_inc_cb, LV_EVENT_CLICKED, sb_rounds);
-    lv_obj_add_event_cb(dec, btn_dec_cb, LV_EVENT_CLICKED, sb_rounds);
+    lv_obj_set_style_text_align(sb_rounds, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     // Buttons row INSIDE scroll (so they scroll with the column)
-    lv_obj_t *btnrow = lv_obj_create(scroll);
-    lv_obj_set_width(btnrow, lv_pct(100));
-    lv_obj_set_style_bg_opa(btnrow, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(btnrow, 0, 0);
-    lv_obj_set_style_pad_all(btnrow, 0, 0);
-    lv_obj_set_flex_flow(btnrow, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(btnrow, LV_FLEX_ALIGN_SPACE_BETWEEN,
+    s_btn_row = lv_obj_create(s_scroll);
+    lv_obj_set_width(s_btn_row, lv_pct(100));
+    lv_obj_set_height(s_btn_row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(s_btn_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_btn_row, 0, 0);
+    lv_obj_set_style_pad_all(s_btn_row, 0, 0);
+    lv_obj_set_flex_flow(s_btn_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_btn_row, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    lv_obj_t *b_cancel = lv_btn_create(btnrow);
+    lv_obj_t *b_cancel = lv_btn_create(s_btn_row);
     lv_obj_add_event_cb(b_cancel, cancel_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_width(b_cancel, lv_pct(48));
     lv_obj_t *lc = lv_label_create(b_cancel);
     lv_label_set_text(lc, "Cancel");
     lv_obj_center(lc);
 
-    lv_obj_t *b_confirm = lv_btn_create(btnrow);
+    lv_obj_t *b_confirm = lv_btn_create(s_btn_row);
     lv_obj_add_event_cb(b_confirm, confirm_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_set_width(b_confirm, lv_pct(48));
     lv_obj_t *lq = lv_label_create(b_confirm);
     lv_label_set_text(lq, "Confirm");
     lv_obj_center(lq);
+
+    relayout();
 }
 
 void interval_setup_page_apply_theme(void)
@@ -248,4 +311,5 @@ void interval_setup_page_on_orientation_changed(void)
     if (!s_root)
         return;
     ui_status_bar_force_refresh(&s_sb);
+    relayout();
 }
