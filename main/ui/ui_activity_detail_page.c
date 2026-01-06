@@ -2,6 +2,7 @@
 #include "ui_status_bar.h"
 #include "ui_theme.h"
 #include "activity_store.h"
+#include "nvs_helper.h"
 #include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
@@ -108,6 +109,8 @@ static void show_hint(const char *msg)
     if (s_hint && lv_obj_is_valid(s_hint))
     {
         lv_label_set_text(s_hint, msg);
+        lv_label_set_long_mode(s_hint, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(s_hint, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_clear_flag(s_hint, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -221,8 +224,11 @@ static void refresh_detail(void)
 
     if (r != ESP_OK || total == 0)
     {
+        uint32_t s_current_m = nvs_helper_get_split_len();
         lv_table_set_row_cnt(s_tbl, 0);
-        show_hint("No splits yet.\nRow past 500m to create splits.");
+        char hint_msg[64];
+        snprintf(hint_msg, sizeof(hint_msg), "No splits yet.\nRow past %um to create splits.", (unsigned int)s_current_m);
+        show_hint(hint_msg);
         update_nav_controls();
         return;
     }
@@ -293,7 +299,7 @@ static void relayout(void)
     lv_coord_t w = lv_obj_get_width(s_root);
 
     // tighter padding in landscape
-    lv_coord_t pad_lr = land ? 6 : 10;
+    lv_coord_t pad_lr = land ? 6 : 1;
     lv_coord_t name_h = land ? 20 : 26;
     lv_coord_t hdr_h = land ? 20 : 24;
     lv_coord_t nav_h = land ? 22 : 26;
@@ -318,6 +324,14 @@ static void relayout(void)
         lv_obj_set_style_pad_bottom(s_hdr_row, 1, 0);
     }
 
+    if (s_hint)
+    {
+        lv_obj_set_width(s_hint, land ? lv_pct(70) : lv_pct(90));
+        lv_label_set_long_mode(s_hint, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(s_hint, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_center(s_hint);
+    }
+
     if (s_nav_row)
     {
         lv_obj_set_height(s_nav_row, nav_h);
@@ -333,9 +347,9 @@ static void relayout(void)
     // Column widths depend on screen width/orientation
     lv_coord_t usable = w - (pad_lr * 2);
 
-    lv_coord_t c1 = land ? 75 : 48;        // Dist
-    lv_coord_t c2 = land ? 96 : 80;        // Time
-    lv_coord_t c3 = land ? 96 : 80;        // Pace
+    lv_coord_t c1 = land ? 75 : 50;        // Dist
+    lv_coord_t c2 = land ? 96 : 76;        // Time
+    lv_coord_t c3 = land ? 96 : 76;        // Pace
     lv_coord_t c0 = usable - c3 - c1 - c2; // #
 
     // Guard minimum for last column

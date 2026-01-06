@@ -150,7 +150,7 @@ static bool load_index_file(void)
         it->id = (uint32_t)id;
         it->start_ts = (time_t)start_ts;
         it->distance_m = (float)dist;
-        it->duration_s = (uint32_t)(dur / 1000);
+        it->duration_s = (uint32_t)dur;
 
         // keep the raw field for now; we won't display pace on summary tiles
         it->avg_pace_s_per500 = (float)pace;
@@ -250,7 +250,7 @@ static void build_list_ui(void)
         lv_obj_t *dist_lbl = lv_label_create(card);
         lv_label_set_text(dist_lbl, dist);
         ui_theme_apply_label(dist_lbl, false);
-        lv_obj_align(dist_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
+        lv_obj_align(dist_lbl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
         // Duration (top-right)
         char dur[24];
@@ -258,7 +258,7 @@ static void build_list_ui(void)
         lv_obj_t *dur_lbl = lv_label_create(card);
         lv_label_set_text(dur_lbl, dur);
         ui_theme_apply_label(dur_lbl, true);
-        lv_obj_align(dur_lbl, LV_ALIGN_TOP_RIGHT, 0, 0);
+        lv_obj_align(dur_lbl, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
 
         // Date/time (bottom-left)
         struct tm tmv;
@@ -269,7 +269,7 @@ static void build_list_ui(void)
         lv_obj_t *date_lbl = lv_label_create(card);
         lv_label_set_text(date_lbl, date);
         ui_theme_apply_label(date_lbl, true);
-        lv_obj_align(date_lbl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        lv_obj_align(date_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
 
         // Safety: labels should never be scrollable/clickable
         lv_obj_clear_flag(dist_lbl, LV_OBJ_FLAG_SCROLLABLE);
