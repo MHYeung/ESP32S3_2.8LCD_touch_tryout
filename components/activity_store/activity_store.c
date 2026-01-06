@@ -115,13 +115,16 @@ esp_err_t activity_store_resolve_paths(const char *in_path_or_base,
     return ESP_OK;
 }
 
-esp_err_t activity_store_load_splits(const char *in_path_or_base,
-                                     activity_store_split_t *out_rows,
-                                     size_t max_rows,
-                                     size_t *out_count,
-                                     activity_store_summary_t *out_summary)
+esp_err_t activity_store_load_splits_page(const char *in_path_or_base,
+                                          size_t start_index,
+                                          activity_store_split_t *out_rows,
+                                          size_t max_rows,
+                                          size_t *out_count,
+                                          size_t *out_total_count,
+                                          activity_store_summary_t *out_summary)
 {
     if (out_count) *out_count = 0;
+    if (out_total_count) *out_total_count = 0;
     if (out_summary) memset(out_summary, 0, sizeof(*out_summary));
 
     char strokes_path[256], splits_path[256];
@@ -196,7 +199,7 @@ esp_err_t activity_store_load_splits(const char *in_path_or_base,
         }
         last_total_dist = row.total_dist_m;
 
-        if (out_rows && stored < max_rows) {
+        if (seen >= start_index && out_rows && stored < max_rows) {
             out_rows[stored++] = row;
         }
         seen++;
@@ -205,6 +208,7 @@ esp_err_t activity_store_load_splits(const char *in_path_or_base,
     fclose(f);
 
     if (out_count) *out_count = stored;
+    if (out_total_count) *out_total_count = seen;
 
     if (out_summary) {
         out_summary->total_distance_m = last_total_dist;
@@ -218,4 +222,19 @@ esp_err_t activity_store_load_splits(const char *in_path_or_base,
 
     // If file had data but we stored 0 (max_rows=0) still OK.
     return (seen > 0) ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t activity_store_load_splits(const char *in_path_or_base,
+                                     activity_store_split_t *out_rows,
+                                     size_t max_rows,
+                                     size_t *out_count,
+                                     activity_store_summary_t *out_summary)
+{
+    return activity_store_load_splits_page(in_path_or_base,
+                                           0,
+                                           out_rows,
+                                           max_rows,
+                                           out_count,
+                                           NULL,
+                                           out_summary);
 }

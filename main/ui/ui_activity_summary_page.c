@@ -304,9 +304,9 @@ void activity_summary_page_create(lv_obj_t *parent)
     lv_obj_set_flex_grow(body, 1);
     lv_obj_set_style_border_width(body, 0, 0);
     lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(body, 8, 0);
+    lv_obj_set_style_pad_all(body, 2, 0);
     lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(body, 6, 0);
+    lv_obj_set_style_pad_row(body, 4, 0);
 
     // Header row (Back + Title)
     lv_obj_t *hdr = lv_obj_create(body);
