@@ -466,6 +466,7 @@ void activity_detail_page_create(lv_obj_t *parent)
     lv_obj_t *prev_lbl = lv_label_create(s_btn_prev);
     ui_theme_apply_label(prev_lbl, true);
     lv_label_set_text(prev_lbl, LV_SYMBOL_LEFT);
+    lv_obj_align(prev_lbl, LV_ALIGN_CENTER, 0, 0);
 
     s_page_lbl = lv_label_create(s_nav_row);
     ui_theme_apply_label(s_page_lbl, true);
@@ -477,6 +478,7 @@ void activity_detail_page_create(lv_obj_t *parent)
     lv_obj_t *next_lbl = lv_label_create(s_btn_next);
     ui_theme_apply_label(next_lbl, true);
     lv_label_set_text(next_lbl, LV_SYMBOL_RIGHT);
+    lv_obj_align(next_lbl, LV_ALIGN_CENTER, 0, 0);
 
     // Frozen header row (NOT scrollable)
     s_hdr_row = lv_obj_create(s_root);
