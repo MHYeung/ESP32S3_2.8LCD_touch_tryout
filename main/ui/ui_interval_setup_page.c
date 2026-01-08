@@ -164,12 +164,16 @@ static void confirm_cb(lv_event_t *e)
     interval_program_stop(); // IMPORTANT: do NOT start here
 
     // Go to interval data page (await user press Start there)
+    ui_set_interval_start_armed(true);
+    ui_set_interval_data_visible(true);
     ui_go_to_page(UI_INTERVAL_DATA_PAGE, true);
 }
 
 static void cancel_cb(lv_event_t *e)
 {
     (void)e;
+    ui_set_interval_start_armed(false);
+    ui_set_interval_data_visible(false);
     ui_go_to_page(UI_PAGE_MENU, true);
 }
 

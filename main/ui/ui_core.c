@@ -36,6 +36,8 @@ static lv_obj_t *s_interval_left_gesture = NULL;
 
 static ui_page_t s_current_page = UI_PAGE_DATA;
 static bool s_transitioning = false;
+static bool s_interval_start_armed = false;
+static bool s_interval_data_visible = false;
 
 /* Gesture State */
 static bool s_top_swipe_armed = false;
@@ -77,6 +79,7 @@ static lv_obj_t *s_stop_save_btn_box = NULL;
 static lv_obj_t *s_stop_save_msg = NULL;
 static lv_obj_t *s_btn_save = NULL;
 static lv_obj_t *s_btn_save_cancel = NULL;
+static char s_stop_save_prompt_msg[64] = "Stop and save this session?";
 
 /* Callbacks registered from main.c */
 static ui_dark_mode_cb_t s_dark_mode_cb = NULL;
@@ -106,6 +109,24 @@ void ui_register_stop_save_confirm_cb(ui_stop_save_confirm_cb_t cb) { s_stop_sav
 void ui_register_shutdown_confirm_cb(ui_shutdown_confirm_cb_t cb) { s_shutdown_confirm_cb = cb; }
 void ui_register_dark_mode_cb(ui_dark_mode_cb_t cb) { s_dark_mode_cb = cb; }
 void ui_register_auto_rotate_cb(ui_auto_rotate_cb_t cb) { s_auto_rotate_cb = cb; }
+
+void ui_set_interval_start_armed(bool armed) { s_interval_start_armed = armed; }
+bool ui_take_interval_start_armed(void)
+{
+    bool armed = s_interval_start_armed;
+    s_interval_start_armed = false;
+    return armed;
+}
+
+void ui_set_interval_data_visible(bool visible)
+{
+    s_interval_data_visible = visible;
+
+    if (!visible && s_current_page == UI_INTERVAL_DATA_PAGE)
+    {
+        ui_go_to_page(UI_PAGE_DATA, true);
+    }
+}
 
 void ui_notify_dark_mode_changed(bool enabled)
 {
@@ -320,7 +341,7 @@ static void data_right_swipe_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
-    if (!indev || s_transitioning || s_current_page != UI_PAGE_DATA)
+    if (!indev || s_transitioning || s_current_page != UI_PAGE_DATA || !s_interval_data_visible)
         return;
 
     if (code == LV_EVENT_PRESSED)
@@ -356,7 +377,7 @@ static void interval_left_swipe_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
-    if (!indev || s_transitioning || s_current_page != UI_INTERVAL_DATA_PAGE)
+    if (!indev || s_transitioning || s_current_page != UI_INTERVAL_DATA_PAGE || !s_interval_data_visible)
         return;
 
     if (code == LV_EVENT_PRESSED)
@@ -416,7 +437,7 @@ static void ui_pages_relayout(void)
     if (s_page_interval_data)
     {
         lv_obj_set_size(s_page_interval_data, lv_pct(100), lv_pct(100));
-        if (s_current_page == UI_INTERVAL_DATA_PAGE)
+        if (s_interval_data_visible && s_current_page == UI_INTERVAL_DATA_PAGE)
         {
             lv_obj_set_pos(s_page_interval_data, 0, 0);
             lv_obj_clear_flag(s_page_interval_data, LV_OBJ_FLAG_HIDDEN);
@@ -583,7 +604,7 @@ static void ui_pages_relayout(void)
     {
         lv_obj_set_size(s_data_right_gesture, lv_pct(15), lv_pct(100));
         lv_obj_align(s_data_right_gesture, LV_ALIGN_RIGHT_MID, 0, 0);
-        if (s_current_page == UI_PAGE_DATA && !s_transitioning)
+        if (s_current_page == UI_PAGE_DATA && !s_transitioning && s_interval_data_visible)
         {
             lv_obj_clear_flag(s_data_right_gesture, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(s_data_right_gesture);
@@ -598,7 +619,7 @@ static void ui_pages_relayout(void)
     {
         lv_obj_set_size(s_interval_left_gesture, lv_pct(15), lv_pct(100));
         lv_obj_align(s_interval_left_gesture, LV_ALIGN_LEFT_MID, 0, 0);
-        if (s_current_page == UI_INTERVAL_DATA_PAGE && !s_transitioning)
+        if (s_current_page == UI_INTERVAL_DATA_PAGE && !s_transitioning && s_interval_data_visible)
         {
             lv_obj_clear_flag(s_interval_left_gesture, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(s_interval_left_gesture);
@@ -667,8 +688,11 @@ void ui_go_to_page(ui_page_t target, bool animated)
         return;
     if ((target == UI_INTERVAL_SETUP_PAGE) && !s_page_interval_setup)
         return;
-    if ((target == UI_INTERVAL_DATA_PAGE) && !s_page_interval_data)
+    if ((target == UI_INTERVAL_DATA_PAGE) && (!s_page_interval_data || !s_interval_data_visible))
         return;
+
+    if (target != UI_INTERVAL_DATA_PAGE)
+        s_interval_start_armed = false;
 
     lvgl_port_lock(0);
     lv_coord_t h = lv_obj_get_height(s_scr);
@@ -1073,7 +1097,7 @@ static void stop_save_prompt_create(void *unused)
     lv_obj_set_width(title, lv_pct(100));
 
     s_stop_save_msg = lv_label_create(s_stop_save_panel);
-    lv_label_set_text(s_stop_save_msg, "Stop and save this session?");
+    lv_label_set_text(s_stop_save_msg, s_stop_save_prompt_msg);
     ui_theme_apply_label(s_stop_save_msg, true);
     lv_obj_set_style_text_align(s_stop_save_msg, LV_TEXT_ALIGN_CENTER, 0);
 
@@ -1104,6 +1128,20 @@ static void stop_save_prompt_create(void *unused)
 
 void ui_show_stop_save_prompt(void)
 {
+    snprintf(s_stop_save_prompt_msg, sizeof(s_stop_save_prompt_msg), "Stop and save this session?");
+    lv_async_call(stop_save_prompt_create, NULL);
+}
+
+void ui_show_stop_save_prompt_with_text(const char *msg)
+{
+    if (msg && msg[0])
+    {
+        snprintf(s_stop_save_prompt_msg, sizeof(s_stop_save_prompt_msg), "%s", msg);
+    }
+    else
+    {
+        snprintf(s_stop_save_prompt_msg, sizeof(s_stop_save_prompt_msg), "Stop and save this session?");
+    }
     lv_async_call(stop_save_prompt_create, NULL);
 }
 

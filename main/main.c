@@ -31,6 +31,7 @@
 #include "ui/ui_data_page.h"
 #include "math.h"
 #include "ui/ui_settings_page.h" // Required for ui_settings_register_split_length_cb
+#include "ui/ui_interval_data_page.h"
 #include <stdio.h>
 #include "ui_status_bar.h"
 
@@ -82,6 +83,7 @@ static SemaphoreHandle_t s_activity_mutex = NULL;
 /* Activity Log */
 static QueueHandle_t s_log_q = NULL;
 static activity_log_t s_act_log;
+static uint32_t s_current_split_m = 1000;
 
 /* LVGL display + input */
 static lv_disp_t *s_disp = NULL;
@@ -129,6 +131,8 @@ static void stroke_task(void *arg);
 static void init_display_and_lvgl(void);
 static void init_touch_and_lvgl_input(void);
 static esp_err_t app_set_time_from_rtc(void);
+static void on_split_interval_changed(uint32_t length_m);
+static uint32_t resolve_interval_split_m(void);
 
 /* ===========================================================
  *  GPS GT-U8 Setup
@@ -266,20 +270,24 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
     {
         if (!s_activity_recording)
         {
-            ui_page_t p = ui_get_current_page();
             act_cmd_t cmd = ACT_CMD_START;
-
-            if (p == UI_INTERVAL_DATA_PAGE || p == UI_PAGE_DATA)
-            {
+            if (ui_take_interval_start_armed())
                 cmd = ACT_CMD_START_INTERVAL;
-            }
 
             xQueueSend(s_act_q, &cmd, 0);
         }
         else
         {
             // Recording -> ask user
-            ui_show_stop_save_prompt();
+            ui_page_t p = ui_get_current_page();
+            if (p == UI_INTERVAL_DATA_PAGE)
+            {
+                ui_show_stop_save_prompt_with_text("Finish interval and save?");
+            }
+            else
+            {
+                ui_show_stop_save_prompt();
+            }
         }
         break;
     }
@@ -340,10 +348,14 @@ static void activity_worker_task(void *arg)
         {
             s_activity_recording = true;
             s_session_time_s = 0.0f;
+            ui_set_interval_data_visible(false);
 
             uint32_t id = s_activity_next_id++;
             activity_init(&s_activity, id);
             activity_start(&s_activity, time(NULL));
+            s_activity.is_interval = false;
+
+            activity_log_set_split_interval(&s_act_log, s_current_split_m);
 
             if (s_sd.mounted)
             {
@@ -366,11 +378,14 @@ static void activity_worker_task(void *arg)
             s_activity_recording = true;
             s_session_time_s = 0.0f;
 
+            ui_set_interval_data_visible(true);
             ui_go_to_page(UI_INTERVAL_DATA_PAGE, false);
-            interval_program_start();
             uint32_t id = s_activity_next_id++;
             activity_init(&s_activity, id);
             activity_start(&s_activity, time(NULL));
+            s_activity.is_interval = true;
+            resolve_interval_split_m();
+            activity_log_set_split_interval(&s_act_log, s_current_split_m);
 
             if (s_sd.mounted)
             {
@@ -392,6 +407,8 @@ static void activity_worker_task(void *arg)
         if (cmd == ACT_CMD_STOP_SAVE)
         {
             s_activity_recording = false;
+            ui_set_interval_data_visible(false);
+            interval_program_stop();
 
             // Stop logic updates end time and averages
             activity_stop(&s_activity, time(NULL));
@@ -490,7 +507,19 @@ static void on_split_interval_changed(uint32_t length_m)
     ESP_LOGI(TAG, "UI Callback: Split Interval changed to %lu meters", length_m);
 
     // Update the logger configuration immediately
+    s_current_split_m = length_m;
     activity_log_set_split_interval(&s_act_log, length_m);
+}
+
+static uint32_t resolve_interval_split_m(void)
+{
+    interval_config_t cfg = {0};
+    interval_program_get_config(&cfg);
+
+    if (cfg.work.unit == INTERVAL_UNIT_DISTANCE && cfg.work.value > 0)
+        return cfg.work.value;
+
+    return s_current_split_m;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -786,6 +815,12 @@ static void stroke_task(void *arg)
                                 dist_delta_m,
                                 stroke_delta);
 
+                if (s_activity.is_interval)
+                {
+                    uint32_t t_ms = (uint32_t)(s_session_time_s * 1000.0f);
+                    interval_program_update(true, t_ms, s_activity.distance_m, s_activity.stroke_count);
+                }
+
                 // Calculate Avg Pace from Session Avg Speed
                 float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : 0.0f;
 
@@ -882,6 +917,14 @@ static void stroke_task(void *arg)
                     .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
                 };
                 data_page_set_values(&v);
+                if (recording && s_activity.is_interval)
+                {
+                    interval_data_page_set_pace_s_per_500m(pace);
+                }
+                else
+                {
+                    interval_data_page_set_pace_s_per_500m(NAN);
+                }
             }
         }
         vTaskDelay(sample_delay);
@@ -1117,6 +1160,7 @@ void app_main(void)
     uint8_t saved_val = nvs_helper_get_orientation();
     ui_set_orientation((ui_orientation_t)saved_val);
     uint32_t saved_split = nvs_helper_get_split_len();
+    s_current_split_m = saved_split;
     activity_log_init(&s_act_log); // Ensure log is init'd before setting interval
     activity_log_set_split_interval(&s_act_log, saved_split);
 

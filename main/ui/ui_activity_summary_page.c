@@ -226,8 +226,6 @@ static void build_list_ui(void)
         return;
     }
 
-    // Show newest first, cap to MAX_VISIBLE_ACTS
-    size_t shown = 0;
     for (size_t i = 0; i < s_item_count; i++)
     {
         activity_meta_t *it = &s_items[i];

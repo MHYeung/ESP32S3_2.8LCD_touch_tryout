@@ -38,9 +38,15 @@ void ui_show_shutdown_prompt(void);
 typedef void (*ui_stop_save_confirm_cb_t)(void);
 void ui_register_stop_save_confirm_cb(ui_stop_save_confirm_cb_t cb);
 void ui_show_stop_save_prompt(void);
+void ui_show_stop_save_prompt_with_text(const char *msg);
 
 void ui_set_orientation(ui_orientation_t o);
 void ui_go_to_page(ui_page_t page, bool animated);
+
+// Interval start arming (set by interval setup confirm)
+void ui_set_interval_start_armed(bool armed);
+bool ui_take_interval_start_armed(void);
+void ui_set_interval_data_visible(bool visible);
 
 /* Theme helpers (currently implemented as light/dark). */
 void ui_set_dark_mode(bool enabled);

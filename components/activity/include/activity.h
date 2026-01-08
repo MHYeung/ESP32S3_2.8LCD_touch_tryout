@@ -50,6 +50,9 @@ typedef struct {
     double   sum_spm_dt;      // spm   * dt
     double   sum_power_dt;    // power * dt
     double   total_dt;        // seconds
+
+    // Mode
+    bool     is_interval;     // true when started from interval setup
 } activity_t;
 
 /**
