@@ -17,8 +17,6 @@ static const char *TAG = "ui_act_sum";
 #endif
 #define ACTIVITY_INDEX_PATH ACTIVITY_DIR "/index.csv"
 
-#define MAX_VISIBLE_ACTS 4
-
 typedef struct
 {
     uint32_t id;
@@ -35,15 +33,21 @@ typedef struct
     char path[160];
 } open_arg_t;
 
-#define ACT_MAX 64
-#define MAX_VISIBLE_ACTS 4
+#define ACT_MAX 128
+#define PAGE_ROWS 10
 static activity_meta_t s_items[ACT_MAX];
 static size_t s_item_count = 0;
+static size_t s_page_index = 0;
+static size_t s_total_pages = 1;
 
 static lv_obj_t *s_root = NULL;
 static ui_status_bar_t s_status;
 static lv_obj_t *s_list = NULL;
 static lv_obj_t *s_empty_lbl = NULL;
+static lv_obj_t *s_nav_row = NULL;
+static lv_obj_t *s_btn_prev = NULL;
+static lv_obj_t *s_btn_next = NULL;
+static lv_obj_t *s_page_lbl = NULL;
 
 static int cmp_activity_newest_first(const void *a, const void *b)
 {
@@ -193,9 +197,13 @@ static void open_detail_async(void *p)
     activity_detail_page_open(a->id, a->path);
 }
 
+static void build_list_ui(void);
+
 static void activity_card_cb(lv_event_t *e)
 {
     uintptr_t idx = (uintptr_t)lv_event_get_user_data(e);
+    if (idx >= s_item_count)
+        return;
     activity_meta_t *it = &s_items[idx];
 
     ui_go_to_page(UI_ACTIVITY_DETAIL_PAGE, true);
@@ -205,13 +213,71 @@ static void activity_card_cb(lv_event_t *e)
     lv_async_call(open_detail_async, &s_open_arg);
 }
 
+static void set_btn_enabled(lv_obj_t *btn, bool enabled)
+{
+    if (!btn)
+        return;
+    if (enabled)
+        lv_obj_clear_state(btn, LV_STATE_DISABLED);
+    else
+        lv_obj_add_state(btn, LV_STATE_DISABLED);
+}
+
+static void update_nav_controls(void)
+{
+    if (s_item_count == 0)
+        s_total_pages = 1;
+    else
+        s_total_pages = (s_item_count + PAGE_ROWS - 1) / PAGE_ROWS;
+
+    if (s_page_index >= s_total_pages)
+        s_page_index = s_total_pages - 1;
+
+    if (s_page_lbl && lv_obj_is_valid(s_page_lbl))
+    {
+        char buf[24];
+        if (s_item_count == 0)
+            snprintf(buf, sizeof(buf), "0/0");
+        else
+            snprintf(buf, sizeof(buf), "%u/%u", (unsigned)(s_page_index + 1), (unsigned)s_total_pages);
+        lv_label_set_text(s_page_lbl, buf);
+    }
+
+    set_btn_enabled(s_btn_prev, s_item_count > 0 && s_page_index > 0);
+    set_btn_enabled(s_btn_next, s_item_count > 0 && (s_page_index + 1) < s_total_pages);
+}
+
+static void nav_btn_event_cb(lv_event_t *e)
+{
+    const char *id = (const char *)lv_event_get_user_data(e);
+    if (!id)
+        return;
+
+    if (strcmp(id, "prev") == 0)
+    {
+        if (s_page_index > 0)
+            s_page_index--;
+    }
+    else if (strcmp(id, "next") == 0)
+    {
+        if ((s_page_index + 1) < s_total_pages)
+            s_page_index++;
+    }
+    else
+    {
+        return;
+    }
+
+    build_list_ui();
+}
+
 static void build_list_ui(void)
 {
-    if (!s_list)
+    if (!s_list || !lv_obj_is_valid(s_list))
         return;
 
     lv_obj_clean(s_list);
-    if (s_empty_lbl)
+    if (s_empty_lbl && lv_obj_is_valid(s_empty_lbl))
     {
         lv_obj_del(s_empty_lbl);
         s_empty_lbl = NULL;
@@ -223,14 +289,25 @@ static void build_list_ui(void)
         lv_label_set_text(s_empty_lbl, "No activities found.");
         ui_theme_apply_label(s_empty_lbl, true);
         lv_obj_center(s_empty_lbl);
+        update_nav_controls();
         return;
     }
 
-    for (size_t i = 0; i < s_item_count; i++)
+    size_t start = s_page_index * PAGE_ROWS;
+    size_t end = start + PAGE_ROWS;
+    if (end > s_item_count)
+        end = s_item_count;
+
+    for (size_t i = start; i < end; i++)
     {
         activity_meta_t *it = &s_items[i];
 
         lv_obj_t *card = lv_btn_create(s_list);
+        if (!card)
+        {
+            ESP_LOGE(TAG, "Failed to allocate activity card");
+            break;
+        }
         lv_obj_set_width(card, lv_pct(100));
         lv_obj_set_height(card, 66);
         lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE); // IMPORTANT (LVGL v9 default)
@@ -274,6 +351,8 @@ static void build_list_ui(void)
         lv_obj_clear_flag(dur_lbl, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_clear_flag(date_lbl, LV_OBJ_FLAG_SCROLLABLE);
     }
+
+    update_nav_controls();
 }
 
 void activity_summary_page_refresh(void)
@@ -281,6 +360,7 @@ void activity_summary_page_refresh(void)
     bool ok = load_index_file();
     if (!ok)
         s_item_count = 0;
+    s_page_index = 0;
     build_list_ui();
 }
 
@@ -306,21 +386,41 @@ void activity_summary_page_create(lv_obj_t *parent)
     lv_obj_set_flex_flow(body, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(body, 4, 0);
 
-    // Header row (Back + Title)
-    lv_obj_t *hdr = lv_obj_create(body);
-    lv_obj_set_width(hdr, lv_pct(100));
-    lv_obj_set_height(hdr, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(hdr, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(hdr, 0, 0);
-    lv_obj_set_style_pad_all(hdr, 0, 0);
-    lv_obj_set_flex_flow(hdr, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(hdr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    // Nav row
+    s_nav_row = lv_obj_create(body);
+    lv_obj_set_width(s_nav_row, lv_pct(100));
+    lv_obj_set_height(s_nav_row, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(s_nav_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_nav_row, 0, 0);
+    lv_obj_set_style_pad_all(s_nav_row, 0, 0);
+    lv_obj_set_flex_flow(s_nav_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_nav_row, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    lv_obj_t *title = lv_label_create(hdr);
-    lv_label_set_text(title, "Activities");
-    ui_theme_apply_label(title, false);
+    s_btn_prev = lv_btn_create(s_nav_row);
+    ui_theme_apply_button(s_btn_prev);
+    lv_obj_add_event_cb(s_btn_prev, nav_btn_event_cb, LV_EVENT_CLICKED, (void *)"prev");
+    lv_obj_t *prev_lbl = lv_label_create(s_btn_prev);
+    ui_theme_apply_label(prev_lbl, true);
+    lv_label_set_text(prev_lbl, LV_SYMBOL_LEFT);
+    lv_obj_align(prev_lbl, LV_ALIGN_CENTER, 0, 0);
 
-    // List container
+    s_page_lbl = lv_label_create(s_nav_row);
+    ui_theme_apply_label(s_page_lbl, true);
+    lv_label_set_text(s_page_lbl, "0/0");
+
+    s_btn_next = lv_btn_create(s_nav_row);
+    ui_theme_apply_button(s_btn_next);
+    lv_obj_add_event_cb(s_btn_next, nav_btn_event_cb, LV_EVENT_CLICKED, (void *)"next");
+    lv_obj_t *next_lbl = lv_label_create(s_btn_next);
+    ui_theme_apply_label(next_lbl, true);
+    lv_label_set_text(next_lbl, LV_SYMBOL_RIGHT);
+    lv_obj_align(next_lbl, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_set_size(s_btn_prev, 36, 22);
+    lv_obj_set_size(s_btn_next, 36, 22);
+
+    // List container (paged, non-scrollable)
     s_list = lv_obj_create(body);
     lv_obj_set_width(s_list, lv_pct(100));
     lv_obj_set_flex_grow(s_list, 1);
@@ -328,15 +428,13 @@ void activity_summary_page_create(lv_obj_t *parent)
     lv_obj_set_style_pad_all(s_list, 6, 0);
     lv_obj_set_style_pad_row(s_list, 8, 0);
     lv_obj_set_style_bg_opa(s_list, LV_OPA_TRANSP, 0);
-
-    // Scrollable list
-    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
-
+    lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_add_flag(s_list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(s_list, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_ACTIVE); // or AUTO
-    lv_obj_set_flex_flow(s_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
+
+    // Non-scrollable body
+    lv_obj_clear_flag(body, LV_OBJ_FLAG_SCROLLABLE);
 
     activity_summary_page_refresh();
 }
@@ -347,6 +445,12 @@ void activity_summary_page_apply_theme(void)
         return;
     ui_status_bar_apply_theme(&s_status);
     // Cards are themed at build time via ui_theme_apply_surface/label.
+    if (s_btn_prev)
+        ui_theme_apply_button(s_btn_prev);
+    if (s_btn_next)
+        ui_theme_apply_button(s_btn_next);
+    if (s_page_lbl)
+        ui_theme_apply_label(s_page_lbl, true);
 }
 
 void activity_summary_page_on_orientation_changed(void)

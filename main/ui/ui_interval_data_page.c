@@ -4,6 +4,7 @@
 #include "ui.h"
 #include <stdio.h>
 #include <math.h>
+#include "lvgl.h"
 
 static lv_obj_t *s_root = NULL;
 static lv_timer_t *s_timer = NULL;
@@ -24,6 +25,7 @@ static lv_obj_t *s_prompt_overlay = NULL;
 static lv_obj_t *s_prompt_panel = NULL;
 static lv_obj_t *s_prompt_rows = NULL;
 static lv_obj_t *s_prompt_hint = NULL;
+static bool s_prompt_allowed = false;
 
 static lv_obj_t *s_noti_overlay = NULL;
 static lv_obj_t *s_noti_panel = NULL;
@@ -36,6 +38,10 @@ static lv_obj_t *s_complete_overlay = NULL;
 static lv_obj_t *s_complete_panel = NULL;
 static lv_obj_t *s_complete_lbl = NULL;
 static uint32_t s_complete_hide_at_ms = 0;
+
+static void start_prompt_show_async(void *p);
+static void start_prompt_hide_async(void *p);
+static void complete_prompt_show_async(void *p);
 
 static void complete_overlay_event_cb(lv_event_t *e)
 {
@@ -122,6 +128,8 @@ extern const lv_font_t lv_font_montserrat_32;
 #else
 #define SLOT_FONT_VALUE_SMALL (SLOT_FONT_VALUE)
 #endif
+
+
 
 static bool is_landscape(void)
 {
@@ -466,9 +474,10 @@ void interval_data_page_set_spm(float spm)
     s_live_spm = spm;
 }
 
-void interval_data_page_show_start_prompt(void)
+static void start_prompt_show_async(void *p)
 {
-    if (!s_root)
+    (void)p;
+    if (!s_root || !s_prompt_allowed)
         return;
 
     interval_config_t cfg = {0};
@@ -542,14 +551,16 @@ void interval_data_page_show_start_prompt(void)
         lv_obj_clear_flag(s_prompt_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
-void interval_data_page_hide_start_prompt(void)
+static void start_prompt_hide_async(void *p)
 {
+    (void)p;
     if (s_prompt_overlay)
         lv_obj_add_flag(s_prompt_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
-void interval_data_page_show_complete_prompt(void)
+static void complete_prompt_show_async(void *p)
 {
+    (void)p;
     if (!s_root)
         return;
 
@@ -583,4 +594,21 @@ void interval_data_page_show_complete_prompt(void)
     s_complete_hide_at_ms = lv_tick_get() + 5000;
     if (s_complete_overlay)
         lv_obj_clear_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+void interval_data_page_show_start_prompt(void)
+{
+    s_prompt_allowed = true;
+    lv_async_call(start_prompt_show_async, NULL);
+}
+
+void interval_data_page_hide_start_prompt(void)
+{
+    s_prompt_allowed = false;
+    lv_async_call(start_prompt_hide_async, NULL);
+}
+
+void interval_data_page_show_complete_prompt(void)
+{
+    lv_async_call(complete_prompt_show_async, NULL);
 }
