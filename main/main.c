@@ -1038,14 +1038,14 @@ static uint8_t calc_dotw(uint16_t y, uint8_t m, uint8_t d)
 static datetime_t app_default_datetime(void)
 {
     datetime_t dt = {
-        .year = 2025,
-        .month = 12,
-        .day = 27,
+        .year = 2026,
+        .month = 01,
+        .day = 01,
         .hour = 12,
         .minute = 0,
         .second = 0,
     };
-    dt.dotw = calc_dotw(dt.year, dt.month, dt.day); // 2025-12-27 => 6 (Sat)
+    dt.dotw = calc_dotw(dt.year, dt.month, dt.day); // 2026.01.01  (Thurs)
     return dt;
 }
 
