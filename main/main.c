@@ -339,7 +339,14 @@ static void activity_worker_task(void *arg)
         if (xQueueReceive(s_act_q, &cmd, portMAX_DELAY) != pdTRUE)
             continue;
 
-        ui_go_to_page(UI_PAGE_DATA, true);
+        if (cmd == ACT_CMD_START_INTERVAL)
+        {
+            ui_go_to_page(UI_INTERVAL_DATA_PAGE, true);
+        }
+        else
+        {
+            ui_go_to_page(UI_PAGE_DATA, true);
+        }
 
         if (s_activity_mutex)
             xSemaphoreTake(s_activity_mutex, portMAX_DELAY);
@@ -379,6 +386,7 @@ static void activity_worker_task(void *arg)
             s_session_time_s = 0.0f;
 
             ui_set_interval_data_visible(true);
+            interval_data_page_hide_start_prompt();
             ui_go_to_page(UI_INTERVAL_DATA_PAGE, false);
             uint32_t id = s_activity_next_id++;
             activity_init(&s_activity, id);
@@ -408,6 +416,7 @@ static void activity_worker_task(void *arg)
         {
             s_activity_recording = false;
             ui_set_interval_data_visible(false);
+            interval_data_page_hide_start_prompt();
             interval_program_stop();
 
             // Stop logic updates end time and averages
@@ -920,10 +929,12 @@ static void stroke_task(void *arg)
                 if (recording && s_activity.is_interval)
                 {
                     interval_data_page_set_pace_s_per_500m(pace);
+                    interval_data_page_set_spm(spm_disp);
                 }
                 else
                 {
                     interval_data_page_set_pace_s_per_500m(NAN);
+                    interval_data_page_set_spm(NAN);
                 }
             }
         }

@@ -3,6 +3,7 @@
 #include "ui_theme.h"
 #include "ui.h"
 #include "interval_program.h"
+#include "ui_interval_data_page.h"
 #include <stdio.h>
 
 static lv_obj_t *s_root = NULL;
@@ -167,6 +168,7 @@ static void confirm_cb(lv_event_t *e)
     ui_set_interval_start_armed(true);
     ui_set_interval_data_visible(true);
     ui_go_to_page(UI_INTERVAL_DATA_PAGE, true);
+    interval_data_page_show_start_prompt();
 }
 
 static void cancel_cb(lv_event_t *e)
@@ -174,6 +176,7 @@ static void cancel_cb(lv_event_t *e)
     (void)e;
     ui_set_interval_start_armed(false);
     ui_set_interval_data_visible(false);
+    interval_data_page_hide_start_prompt();
     ui_go_to_page(UI_PAGE_MENU, true);
 }
 
