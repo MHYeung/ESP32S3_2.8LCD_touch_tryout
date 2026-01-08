@@ -30,6 +30,22 @@ static lv_obj_t *s_noti_panel = NULL;
 static lv_obj_t *s_noti_lbl = NULL;
 static uint32_t s_noti_hide_at_ms = 0;
 static interval_phase_t s_noti_phase = INTERVAL_PHASE_IDLE;
+static bool s_noti_show_start = false;
+
+static lv_obj_t *s_complete_overlay = NULL;
+static lv_obj_t *s_complete_panel = NULL;
+static lv_obj_t *s_complete_lbl = NULL;
+static uint32_t s_complete_hide_at_ms = 0;
+
+static void complete_overlay_event_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_complete_overlay)
+    {
+        lv_obj_add_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
+        s_complete_hide_at_ms = 0;
+    }
+}
 
 static void fmt_val(char *out, size_t n, interval_unit_t u, uint32_t v)
 {
@@ -212,7 +228,11 @@ static void update_noti(interval_ui_state_t st)
     if (st.phase != s_noti_phase)
     {
         s_noti_phase = st.phase;
-        s_noti_hide_at_ms = lv_tick_get() + 3000;
+        if (st.phase == INTERVAL_PHASE_WORK || st.phase == INTERVAL_PHASE_REST)
+        {
+            s_noti_show_start = true;
+            s_noti_hide_at_ms = lv_tick_get() + 3000;
+        }
     }
 
     if (s_noti_overlay && s_noti_hide_at_ms > 0)
@@ -221,10 +241,11 @@ static void update_noti(interval_ui_state_t st)
         {
             lv_obj_add_flag(s_noti_overlay, LV_OBJ_FLAG_HIDDEN);
             s_noti_hide_at_ms = 0;
+            s_noti_show_start = false;
         }
     }
 
-    if (st.unit != INTERVAL_UNIT_TIME || st.remaining > 5 || st.phase == INTERVAL_PHASE_DONE || st.phase == INTERVAL_PHASE_IDLE)
+    if (st.phase == INTERVAL_PHASE_DONE || st.phase == INTERVAL_PHASE_IDLE)
         return;
 
     if (!s_noti_overlay)
@@ -250,7 +271,6 @@ static void update_noti(interval_ui_state_t st)
         lv_obj_center(s_noti_lbl);
     }
 
-    const char *next = (st.phase == INTERVAL_PHASE_WORK) ? "REST" : "WORK";
     lv_obj_set_style_bg_color(s_noti_panel,
                               (st.phase == INTERVAL_PHASE_WORK)
                                   ? lv_palette_main(LV_PALETTE_ORANGE)
@@ -258,7 +278,21 @@ static void update_noti(interval_ui_state_t st)
                               0);
     if (s_noti_lbl)
     {
-        lv_label_set_text_fmt(s_noti_lbl, "%s in %us", next, (unsigned)st.remaining);
+        if (s_noti_show_start)
+        {
+            const char *start = (st.phase == INTERVAL_PHASE_WORK) ? "WORK start" : "REST start";
+            lv_label_set_text(s_noti_lbl, start);
+        }
+        else if (st.unit == INTERVAL_UNIT_TIME && st.remaining <= 5)
+        {
+            const char *next = (st.phase == INTERVAL_PHASE_WORK) ? "REST" : "WORK";
+            lv_label_set_text_fmt(s_noti_lbl, "%s in %us", next, (unsigned)st.remaining);
+        }
+        else
+        {
+            lv_obj_add_flag(s_noti_overlay, LV_OBJ_FLAG_HIDDEN);
+            return;
+        }
     }
 
     if (s_noti_overlay)
@@ -347,6 +381,15 @@ static void tick_cb(lv_timer_t *t)
         lv_label_set_text(s_live_spm_title, "SPM");
 
     update_noti(st);
+
+    if (s_complete_overlay && s_complete_hide_at_ms > 0)
+    {
+        if ((int32_t)(lv_tick_get() - s_complete_hide_at_ms) >= 0)
+        {
+            lv_obj_add_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
+            s_complete_hide_at_ms = 0;
+        }
+    }
 }
 
 void interval_data_page_create(lv_obj_t *parent)
@@ -503,4 +546,41 @@ void interval_data_page_hide_start_prompt(void)
 {
     if (s_prompt_overlay)
         lv_obj_add_flag(s_prompt_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+void interval_data_page_show_complete_prompt(void)
+{
+    if (!s_root)
+        return;
+
+    if (!s_complete_overlay)
+    {
+        lv_obj_t *top = lv_layer_top();
+        s_complete_overlay = lv_obj_create(top);
+        lv_obj_set_size(s_complete_overlay, lv_pct(100), lv_pct(100));
+        lv_obj_set_style_bg_opa(s_complete_overlay, LV_OPA_40, 0);
+        lv_obj_set_style_bg_color(s_complete_overlay, lv_color_black(), 0);
+        lv_obj_set_style_border_width(s_complete_overlay, 0, 0);
+        lv_obj_clear_flag(s_complete_overlay, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_add_event_cb(s_complete_overlay, complete_overlay_event_cb, LV_EVENT_CLICKED, NULL);
+
+        s_complete_panel = lv_obj_create(s_complete_overlay);
+        lv_obj_set_size(s_complete_panel, 180, 70);
+        lv_obj_set_style_bg_opa(s_complete_panel, LV_OPA_60, 0);
+        lv_obj_set_style_bg_color(s_complete_panel, lv_palette_main(LV_PALETTE_BLUE), 0);
+        lv_obj_set_style_border_width(s_complete_panel, 0, 0);
+        lv_obj_set_style_radius(s_complete_panel, 6, 0);
+        lv_obj_center(s_complete_panel);
+        lv_obj_clear_flag(s_complete_panel, LV_OBJ_FLAG_SCROLLABLE);
+
+        s_complete_lbl = lv_label_create(s_complete_panel);
+        ui_theme_apply_label(s_complete_lbl, false);
+        lv_label_set_text(s_complete_lbl, "Interval complete");
+        lv_obj_center(s_complete_lbl);
+    }
+
+    s_complete_hide_at_ms = lv_tick_get() + 5000;
+    if (s_complete_overlay)
+        lv_obj_clear_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
 }

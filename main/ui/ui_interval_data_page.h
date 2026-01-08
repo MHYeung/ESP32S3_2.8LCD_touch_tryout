@@ -8,3 +8,4 @@ void interval_data_page_set_pace_s_per_500m(float pace_s);
 void interval_data_page_set_spm(float spm);
 void interval_data_page_show_start_prompt(void);
 void interval_data_page_hide_start_prompt(void);
+void interval_data_page_show_complete_prompt(void);

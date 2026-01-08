@@ -84,6 +84,7 @@ static SemaphoreHandle_t s_activity_mutex = NULL;
 static QueueHandle_t s_log_q = NULL;
 static activity_log_t s_act_log;
 static uint32_t s_current_split_m = 1000;
+static bool s_interval_done_queued = false;
 
 /* LVGL display + input */
 static lv_disp_t *s_disp = NULL;
@@ -356,6 +357,7 @@ static void activity_worker_task(void *arg)
             s_activity_recording = true;
             s_session_time_s = 0.0f;
             ui_set_interval_data_visible(false);
+            s_interval_done_queued = false;
 
             uint32_t id = s_activity_next_id++;
             activity_init(&s_activity, id);
@@ -384,6 +386,7 @@ static void activity_worker_task(void *arg)
             // Start normal activity logging first (same as ACT_CMD_START)
             s_activity_recording = true;
             s_session_time_s = 0.0f;
+            s_interval_done_queued = false;
 
             ui_set_interval_data_visible(true);
             interval_data_page_hide_start_prompt();
@@ -418,6 +421,7 @@ static void activity_worker_task(void *arg)
             ui_set_interval_data_visible(false);
             interval_data_page_hide_start_prompt();
             interval_program_stop();
+            s_interval_done_queued = false;
 
             // Stop logic updates end time and averages
             activity_stop(&s_activity, time(NULL));
@@ -828,6 +832,18 @@ static void stroke_task(void *arg)
                 {
                     uint32_t t_ms = (uint32_t)(s_session_time_s * 1000.0f);
                     interval_program_update(true, t_ms, s_activity.distance_m, s_activity.stroke_count);
+                    if (!s_interval_done_queued)
+                    {
+                        interval_ui_state_t ist = {0};
+                        interval_program_get_ui(&ist);
+                        if (ist.phase == INTERVAL_PHASE_DONE)
+                        {
+                            s_interval_done_queued = true;
+                            interval_data_page_show_complete_prompt();
+                            act_cmd_t done_cmd = ACT_CMD_STOP_SAVE;
+                            xQueueSend(s_act_q, &done_cmd, 0);
+                        }
+                    }
                 }
 
                 // Calculate Avg Pace from Session Avg Speed
