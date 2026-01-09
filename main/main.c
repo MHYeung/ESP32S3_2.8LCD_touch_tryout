@@ -27,11 +27,11 @@
 #include <time.h>
 #include "esp_timer.h"
 
-#include "ui/ui.h" // our new UI module
-#include "ui/ui_data_page.h"
+#include "ui.h" // our new UI module
+#include "ui_data_page.h"
 #include "math.h"
-#include "ui/ui_settings_page.h" // Required for ui_settings_register_split_length_cb
-#include "ui/ui_interval_data_page.h"
+#include "ui_settings_page.h" // Required for ui_settings_register_split_length_cb
+#include "ui_interval_data_page.h"
 #include <stdio.h>
 #include "ui_status_bar.h"
 

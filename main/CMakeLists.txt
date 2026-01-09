@@ -2,19 +2,26 @@ idf_component_register(
     SRCS
         "main.c"
         "ui/ui_core.c"
-        "ui/ui_settings_page.c"
+        "ui/settings/ui_settings_page.c"
         "ui/ui_data_page.c"
-        "ui/ui_status_bar.c"
-        "ui/ui_theme.c"
+        "ui/settings/ui_status_bar.c"
+        "ui/settings/ui_theme.c"
         "ui/ui_menu_page.c"
-        "ui/ui_activity_summary_page.c"
-        "ui/ui_activity_detail_page.c"
-        "ui/ui_interval_setup_page.c"
-        "ui/ui_interval_data_page.c"
+        "ui/activity_summary/ui_activity_summary_page.c"
+        "ui/activity_summary/ui_activity_detail_page.c"
+        "ui/interval/ui_interval_setup_page.c"
+        "ui/interval/ui_interval_data_page.c"
         "interval_program/interval_program.c"
+        "ui/race_mode/ui_race_setup_page.c" 
+        "ui/race_mode/ui_race_data_page.c"
+        
     INCLUDE_DIRS
         "."
         "ui"
+        "ui/activity_summary"
+        "ui/interval"
+        "ui/settings"
+        "ui/race_mode"
         "interval_program"
     REQUIRES
         lcd_st7789

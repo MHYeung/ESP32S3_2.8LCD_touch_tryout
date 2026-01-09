@@ -1,6 +1,6 @@
 // main/ui/ui_status_bar.c
-#include "ui_status_bar.h"
-#include "ui_theme.h"
+#include "ui/settings/ui_status_bar.h"
+#include "ui/settings/ui_theme.h"
 #include "rtc_pcf85063.h"
 #include "battery_drv.h"
 
