@@ -166,6 +166,7 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
         // 2. Write Metadata Rows (Device Settings)
         fprintf(log->f_splits, "Device Info,ESP32S3-BLE Rowing Speed Coach\n");
         fprintf(log->f_splits, "Session Start,%s\n", time_str);
+        fprintf(log->f_splits, "Session Type, ");
         fprintf(log->f_splits, "Split Setting,%.0f meters\n", log->split_interval_m); //
         fprintf(log->f_splits, "Activity ID,%u\n", (unsigned int)activity_id);
 

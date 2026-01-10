@@ -150,6 +150,8 @@ esp_err_t activity_store_load_splits_page(const char *in_path_or_base,
     float total_time_s = 0.0f;
     float last_total_dist = 0.0f;
 
+    const bool fast_page_only = (out_total_count == NULL && out_summary == NULL);
+
     while (fgets(line, sizeof(line), f)) {
         strip_newline(line);
         const char *p = skip_ws(line);
@@ -203,6 +205,11 @@ esp_err_t activity_store_load_splits_page(const char *in_path_or_base,
             out_rows[stored++] = row;
         }
         seen++;
+
+        // If caller doesn't need total/summary, stop once we have enough rows.
+        if (fast_page_only && stored >= max_rows) {
+            break;
+        }
     }
 
     fclose(f);

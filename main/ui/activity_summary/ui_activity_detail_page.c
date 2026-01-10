@@ -6,6 +6,10 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
 
 static const char *TAG = "ui_act_detail";
 
@@ -16,6 +20,34 @@ static uint32_t s_act_id = 0;
 static char s_base_full[192] = {0}; // full base path WITHOUT suffix, e.g. "/sdcard/activities/20260104_2235_01"
 static size_t s_page_index = 0;
 static size_t s_total_rows = 0;
+static size_t s_page_row_count = 0;
+static bool s_total_known = false;
+static bool s_has_next = false;
+static bool s_pending_load = false;
+
+typedef struct
+{
+    char base_full[192];
+    size_t page_index;
+    bool want_total;
+} detail_load_req_t;
+
+typedef struct
+{
+    char base_full[192];
+    size_t page_index;
+    size_t count;
+    size_t total_rows;
+    bool total_known;
+    bool has_next;
+    bool ok;
+    bool retry_prev;
+    activity_store_split_t rows[PAGE_ROWS + 1];
+} detail_load_result_t;
+
+static QueueHandle_t s_load_q = NULL;
+static TaskHandle_t s_load_task = NULL;
+static bool s_loader_ready = false;
 
 // UI handles
 static lv_obj_t *s_root = NULL;
@@ -30,6 +62,8 @@ static lv_obj_t *s_btn_next = NULL;
 static lv_obj_t *s_page_lbl = NULL;
 static ui_status_bar_t s_status;
 static lv_obj_t *s_hdr_lbl[4] = {0};
+
+static void request_load(void);
 
 #define SPLIT_COLS 4
 static const lv_coord_t s_col_w[SPLIT_COLS] = {24, 60, 74, 74}; // tweak to taste
@@ -135,25 +169,46 @@ static void set_btn_enabled(lv_obj_t *btn, bool enabled)
 
 static void update_nav_controls(void)
 {
-    size_t total_pages = (s_total_rows + PAGE_ROWS - 1) / PAGE_ROWS;
-    if (total_pages == 0)
-        total_pages = 1;
-
-    if (s_page_index >= total_pages)
-        s_page_index = total_pages - 1;
-
     if (s_page_lbl && lv_obj_is_valid(s_page_lbl))
     {
         char buf[24];
-        if (s_total_rows == 0)
-            snprintf(buf, sizeof(buf), "0/0");
+        if (s_total_known)
+        {
+            size_t total_pages = (s_total_rows + PAGE_ROWS - 1) / PAGE_ROWS;
+            if (total_pages == 0)
+                total_pages = 1;
+
+            if (s_page_index >= total_pages)
+                s_page_index = total_pages - 1;
+
+            if (s_total_rows == 0)
+                snprintf(buf, sizeof(buf), "0/0");
+            else
+                snprintf(buf, sizeof(buf), "%u/%u", (unsigned)(s_page_index + 1), (unsigned)total_pages);
+        }
         else
-            snprintf(buf, sizeof(buf), "%u/%u", (unsigned)(s_page_index + 1), (unsigned)total_pages);
+        {
+            if (s_page_row_count == 0)
+                snprintf(buf, sizeof(buf), "0/0");
+            else
+                snprintf(buf, sizeof(buf), "%u/?", (unsigned)(s_page_index + 1));
+        }
         lv_label_set_text(s_page_lbl, buf);
     }
 
-    set_btn_enabled(s_btn_prev, s_total_rows > 0 && s_page_index > 0);
-    set_btn_enabled(s_btn_next, s_total_rows > 0 && (s_page_index + 1) < total_pages);
+    if (s_total_known)
+    {
+        size_t total_pages = (s_total_rows + PAGE_ROWS - 1) / PAGE_ROWS;
+        if (total_pages == 0)
+            total_pages = 1;
+        set_btn_enabled(s_btn_prev, s_total_rows > 0 && s_page_index > 0);
+        set_btn_enabled(s_btn_next, s_total_rows > 0 && (s_page_index + 1) < total_pages);
+    }
+    else
+    {
+        set_btn_enabled(s_btn_prev, s_page_row_count > 0 && s_page_index > 0);
+        set_btn_enabled(s_btn_next, s_page_row_count > 0 && s_has_next);
+    }
 }
 
 static void format_split_time(char *out, size_t out_len, const char *in)
@@ -182,47 +237,30 @@ static void format_split_time(char *out, size_t out_len, const char *in)
     snprintf(out, out_len, "%d:%02d.%02d", total_min, ss, hundredths);
 }
 
-static void refresh_detail(void)
+static void apply_loaded_rows(const activity_store_split_t *rows,
+                              size_t count,
+                              bool has_next,
+                              bool ok,
+                              bool total_known,
+                              size_t total_rows)
 {
     if (!s_tbl || !s_scroller)
         return;
-    if (s_base_full[0] == 0)
-        return;
 
-    activity_store_split_t rows[PAGE_ROWS];
-    memset(rows, 0, sizeof(rows));
-    size_t count = 0;
-    size_t total = 0;
-    size_t start_index = s_page_index * PAGE_ROWS;
-
-    esp_err_t r = activity_store_load_splits_page(s_base_full,
-                                                  start_index,
-                                                  rows,
-                                                  PAGE_ROWS,
-                                                  &count,
-                                                  &total,
-                                                  NULL);
-
-    if (total > 0)
+    if (total_known)
     {
-        size_t total_pages = (total + PAGE_ROWS - 1) / PAGE_ROWS;
-        if (start_index >= total)
-        {
-            s_page_index = total_pages - 1;
-            start_index = s_page_index * PAGE_ROWS;
-            r = activity_store_load_splits_page(s_base_full,
-                                                start_index,
-                                                rows,
-                                                PAGE_ROWS,
-                                                &count,
-                                                &total,
-                                                NULL);
-        }
+        s_total_known = true;
+        s_total_rows = total_rows;
+    }
+    else if (!s_total_known)
+    {
+        s_total_rows = 0;
     }
 
-    s_total_rows = total;
+    s_has_next = has_next;
+    s_page_row_count = ok ? count : 0;
 
-    if (r != ESP_OK || total == 0)
+    if (!ok || count == 0)
     {
         uint32_t s_current_m = nvs_helper_get_split_len();
         lv_table_set_row_cnt(s_tbl, 0);
@@ -233,6 +271,12 @@ static void refresh_detail(void)
         return;
     }
     hide_hint();
+
+    if (!s_total_known && !s_has_next && s_page_index == 0)
+    {
+        s_total_known = true;
+        s_total_rows = count;
+    }
 
     lv_table_set_row_cnt(s_tbl, (uint16_t)count);
 
@@ -261,10 +305,195 @@ static void refresh_detail(void)
     update_nav_controls();
 }
 
-static void refresh_async(void *p)
+static void apply_load_result_async(void *p)
 {
-    (void)p;
-    refresh_detail();
+    detail_load_result_t *res = (detail_load_result_t *)p;
+    if (!res)
+        return;
+
+    if (strcmp(res->base_full, s_base_full) != 0 || res->page_index != s_page_index)
+    {
+        free(res);
+        return;
+    }
+
+    if (res->retry_prev && s_page_index > 0)
+    {
+        s_page_index--;
+        request_load();
+        free(res);
+        return;
+    }
+
+    apply_loaded_rows(res->rows,
+                      res->count,
+                      res->has_next,
+                      res->ok,
+                      res->total_known,
+                      res->total_rows);
+    free(res);
+}
+
+static void detail_load_task(void *arg)
+{
+    (void)arg;
+    detail_load_req_t req;
+
+    for (;;)
+    {
+        if (xQueueReceive(s_load_q, &req, portMAX_DELAY) != pdTRUE)
+            continue;
+
+        detail_load_result_t *res = malloc(sizeof(*res));
+        if (!res)
+        {
+            ESP_LOGE(TAG, "No memory for detail load");
+            continue;
+        }
+        memset(res, 0, sizeof(*res));
+        strncpy(res->base_full, req.base_full, sizeof(res->base_full) - 1);
+        res->page_index = req.page_index;
+
+        if (req.base_full[0] != 0)
+        {
+            size_t count = 0;
+            size_t total = 0;
+            esp_err_t r = activity_store_load_splits_page(req.base_full,
+                                                          req.page_index * PAGE_ROWS,
+                                                          res->rows,
+                                                          PAGE_ROWS + 1,
+                                                          &count,
+                                                          req.want_total ? &total : NULL,
+                                                          NULL);
+
+            if (r == ESP_OK && count == 0 && req.page_index > 0)
+                res->retry_prev = true;
+
+            if (count > PAGE_ROWS)
+            {
+                res->has_next = true;
+                count = PAGE_ROWS;
+            }
+
+            res->count = count;
+            res->ok = (r == ESP_OK && count > 0);
+            if (req.want_total && total > 0)
+            {
+                res->total_known = true;
+                res->total_rows = total;
+            }
+        }
+
+        lv_async_call(apply_load_result_async, res);
+    }
+}
+
+static void ensure_loader(void)
+{
+    if (s_loader_ready)
+        return;
+
+    s_load_q = xQueueCreate(1, sizeof(detail_load_req_t));
+    if (!s_load_q)
+    {
+        ESP_LOGE(TAG, "Failed to create detail load queue");
+        return;
+    }
+
+    BaseType_t ok = xTaskCreatePinnedToCore(detail_load_task,
+                                            "act_detail_loader",
+                                            4096,
+                                            NULL,
+                                            5,
+                                            &s_load_task,
+                                            1);
+    if (ok != pdPASS)
+    {
+        ESP_LOGE(TAG, "Failed to create detail load task");
+        vQueueDelete(s_load_q);
+        s_load_q = NULL;
+        return;
+    }
+
+    s_loader_ready = true;
+}
+
+static void refresh_detail(void)
+{
+    if (!s_tbl || !s_scroller)
+        return;
+    if (s_base_full[0] == 0)
+        return;
+
+    activity_store_split_t rows[PAGE_ROWS + 1];
+    memset(rows, 0, sizeof(rows));
+    size_t count = 0;
+    esp_err_t r = ESP_FAIL;
+    bool has_next = false;
+
+    for (int attempt = 0; attempt < 2; attempt++)
+    {
+        r = activity_store_load_splits_page(s_base_full,
+                                            s_page_index * PAGE_ROWS,
+                                            rows,
+                                            PAGE_ROWS + 1,
+                                            &count,
+                                            NULL,
+                                            NULL);
+
+        if (r == ESP_OK && count == 0 && s_page_index > 0)
+        {
+            s_page_index--;
+            continue;
+        }
+        break;
+    }
+
+    if (count > PAGE_ROWS)
+    {
+        has_next = true;
+        count = PAGE_ROWS;
+    }
+
+    apply_loaded_rows(rows,
+                      count,
+                      has_next,
+                      (r == ESP_OK && count > 0),
+                      false,
+                      0);
+}
+
+static void request_load(void)
+{
+    if (!s_tbl || !s_scroller)
+    {
+        s_pending_load = true;
+        return;
+    }
+    s_pending_load = false;
+    if (s_base_full[0] == 0)
+        return;
+
+    if (!s_total_known)
+        s_total_rows = 0;
+    s_has_next = false;
+    s_page_row_count = 0;
+    lv_table_set_row_cnt(s_tbl, 0);
+    show_hint("Loading...");
+    update_nav_controls();
+
+    ensure_loader();
+    if (!s_loader_ready)
+    {
+        refresh_detail();
+        return;
+    }
+
+    detail_load_req_t req = {0};
+    strncpy(req.base_full, s_base_full, sizeof(req.base_full) - 1);
+    req.page_index = s_page_index;
+    req.want_total = !s_total_known;
+    xQueueOverwrite(s_load_q, &req);
 }
 
 static void nav_btn_event_cb(lv_event_t *e)
@@ -287,7 +516,7 @@ static void nav_btn_event_cb(lv_event_t *e)
         return;
     }
 
-    lv_async_call(refresh_async, NULL);
+    request_load();
 }
 
 static void relayout(void)
@@ -398,6 +627,9 @@ void activity_detail_page_open(uint32_t activity_id, const char *csv_path)
     normalize_base_full(csv_path);
     s_page_index = 0;
     s_total_rows = 0;
+    s_total_known = false;
+    s_has_next = false;
+    s_page_row_count = 0;
 
     if (s_name_lbl && lv_obj_is_valid(s_name_lbl))
     {
@@ -408,8 +640,7 @@ void activity_detail_page_open(uint32_t activity_id, const char *csv_path)
 
     ESP_LOGI(TAG, "Open detail: id=%lu base=%s", (unsigned long)s_act_id, s_base_full);
 
-    // update UI safely
-    lv_async_call(refresh_async, NULL);
+    request_load();
 }
 
 void activity_detail_page_create(lv_obj_t *parent)
@@ -546,6 +777,12 @@ void activity_detail_page_create(lv_obj_t *parent)
 
     relayout();
     update_nav_controls();
+
+    if (s_pending_load && s_base_full[0] != 0)
+    {
+        s_pending_load = false;
+        request_load();
+    }
 }
 
 void activity_detail_page_apply_theme(void)
