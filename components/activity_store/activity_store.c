@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <sys/stat.h>
 #include "esp_log.h"
 
 static const char *TAG = "activity_store";
@@ -81,6 +82,39 @@ esp_err_t activity_store_resolve_paths(const char *in_path_or_base,
 
     // If user passed a base (no .csv), append suffixes
     if (!ends_with(tmp, ".csv")) {
+        // Back-compat: if old layout exists (base_Strokes.csv), keep it.
+        // Otherwise, if path looks like ".../activities/<name>", map to
+        // ".../activities/<name>/<name>" for the new per-activity folder layout.
+        bool old_layout_exists = false;
+        char old_strokes[256];
+        if (snprintf(old_strokes, sizeof(old_strokes), "%s_Strokes.csv", tmp) < (int)sizeof(old_strokes)) {
+            struct stat st;
+            old_layout_exists = (stat(old_strokes, &st) == 0);
+        }
+        if (!old_layout_exists) {
+            const char *act_dir = strstr(tmp, "/activities/");
+            const char *last_slash = strrchr(tmp, '/');
+            if (act_dir && last_slash && last_slash[1] != '\0') {
+                const char *last = last_slash + 1;
+                const char *prev_slash = NULL;
+                for (const char *p = last_slash - 1; p > tmp; --p) {
+                    if (*p == '/') { prev_slash = p; break; }
+                }
+                if (prev_slash) {
+                    const char *prev = prev_slash + 1;
+                    size_t prev_len = (size_t)(last_slash - prev_slash - 1);
+                    size_t last_len = strlen(last);
+                    if (!(prev_len == last_len && memcmp(prev, last, last_len) == 0)) {
+                        size_t need = strlen(tmp) + 1 + last_len + 1;
+                        if (need <= sizeof(tmp)) {
+                            strcat(tmp, "/");
+                            strcat(tmp, last);
+                        }
+                    }
+                }
+            }
+        }
+
         if (out_strokes) snprintf(out_strokes, strokes_len, "%s_Strokes.csv", tmp);
         if (out_splits)  snprintf(out_splits,  splits_len,  "%s_Splits.csv",  tmp);
         return ESP_OK;

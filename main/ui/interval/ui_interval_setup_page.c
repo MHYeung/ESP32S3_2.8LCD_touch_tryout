@@ -23,6 +23,66 @@ static lv_obj_t *dd_work, *sb_work;
 static lv_obj_t *dd_rest, *sb_rest;
 static lv_obj_t *sb_rounds;
 
+// -----------------------
+// Async relayout scheduler
+// -----------------------
+static bool s_relayout_scheduled = false;
+static bool s_relayout_running = false;
+static bool s_relayout_pending = false;
+
+static void relayout_now(void);
+static void relayout_async_cb(void *user_data);
+
+static void relayout_request(void)
+{
+    // Coalesce multiple requests
+    s_relayout_pending = true;
+
+    if (s_relayout_scheduled)
+        return;
+    s_relayout_scheduled = true;
+
+    lv_async_call(relayout_async_cb, NULL);
+}
+
+static void relayout_async_cb(void *user_data)
+{
+    (void)user_data;
+
+    // allow future schedules
+    s_relayout_scheduled = false;
+
+    // page not ready (or was destroyed)
+    if (!s_root)
+    {
+        s_relayout_pending = false;
+        return;
+    }
+
+    // prevent re-entrancy
+    if (s_relayout_running)
+    {
+        // if something requested while running, schedule another pass
+        if (!s_relayout_scheduled)
+        {
+            s_relayout_scheduled = true;
+            lv_async_call(relayout_async_cb, NULL);
+        }
+        return;
+    }
+
+    s_relayout_running = true;
+
+    // drain pending requests
+    while (s_relayout_pending)
+    {
+        s_relayout_pending = false;
+        relayout_now();
+    }
+
+    s_relayout_running = false;
+}
+
 static interval_unit_t dd_to_unit(uint32_t idx)
 {
     if (idx == 0)
@@ -180,7 +240,7 @@ static void cancel_cb(lv_event_t *e)
     ui_go_to_page(UI_PAGE_MENU, true);
 }
 
-static void relayout(void)
+static void relayout_now(void)
 {
     if (!s_root)
         return;
@@ -214,18 +274,18 @@ static void relayout(void)
     if (s_btn_row)
         lv_obj_set_style_pad_row(s_btn_row, row_pad, 0);
 
-    if (dd_work)
+    if (dd_work && lv_obj_get_width(dd_work) != dd_w)
         lv_obj_set_width(dd_work, dd_w);
-    if (dd_rest)
+    if (dd_rest && lv_obj_get_width(dd_rest) != dd_w)
         lv_obj_set_width(dd_rest, dd_w);
-    if (s_rounds_spacer)
+    if (s_rounds_spacer && lv_obj_get_width(s_rounds_spacer) != dd_w)
         lv_obj_set_width(s_rounds_spacer, dd_w);
-    if (sb_work)
-        lv_obj_set_width(sb_work, sb_w);
-    if (sb_rest)
-        lv_obj_set_width(sb_rest, sb_w);
-    if (sb_rounds)
-        lv_obj_set_width(sb_rounds, sb_w);
+    if (sb_work && lv_obj_get_width(sb_work) != dd_w)
+        lv_obj_set_width(sb_work, dd_w);
+    if (sb_rest && lv_obj_get_width(sb_rest) != dd_w)
+        lv_obj_set_width(sb_rest, dd_w);
+    if (sb_rounds && lv_obj_get_width(sb_rounds) != dd_w)
+        lv_obj_set_width(sb_rounds, dd_w);
 }
 
 void interval_setup_page_create(lv_obj_t *parent)
@@ -304,7 +364,7 @@ void interval_setup_page_create(lv_obj_t *parent)
     lv_label_set_text(lq, "Confirm");
     lv_obj_center(lq);
 
-    relayout();
+    relayout_request();
 }
 
 void interval_setup_page_apply_theme(void)
@@ -318,5 +378,5 @@ void interval_setup_page_on_orientation_changed(void)
     if (!s_root)
         return;
     ui_status_bar_force_refresh(&s_sb);
-    relayout();
+    relayout_request();
 }

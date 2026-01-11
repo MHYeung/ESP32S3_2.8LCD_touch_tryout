@@ -141,12 +141,18 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
     char base_name[64];
     build_filename_base(start_ts, activity_id, base_name, sizeof(base_name));
 
-    // Store relative path base for reference
+    // 3. Create per-activity directory
+    char act_dir[160];
+    snprintf(act_dir, sizeof(act_dir), "%s/activities/%s", sd->mount_point, base_name);
+    ensure_dir(act_dir);
+
+    // Store relative path base for reference (used by index.csv)
     snprintf(log->filename_base, sizeof(log->filename_base), "activities/%s", base_name);
 
-    // 3. Open Main Log File (.csv)
-    char full_path_main[160];
-    snprintf(full_path_main, sizeof(full_path_main), "%s/activities/%s_Strokes.csv", sd->mount_point, base_name);
+    // 4. Open Main Log File (.csv)
+    char full_path_main[180];
+    snprintf(full_path_main, sizeof(full_path_main), "%s/activities/%s/Strokes.csv",
+             sd->mount_point, base_name);
 
     log->f_main = fopen(full_path_main, "w");
     if (!log->f_main)
@@ -155,9 +161,10 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
         return ESP_FAIL;
     }
 
-    // 4. Open Splits Log File (_Splits.csv)
-    char full_path_splits[160];
-    snprintf(full_path_splits, sizeof(full_path_splits), "%s/activities/%s_Splits.csv", sd->mount_point, base_name);
+    // 5. Open Splits Log File (_Splits.csv)
+    char full_path_splits[180];
+    snprintf(full_path_splits, sizeof(full_path_splits), "%s/activities/%s/Splits.csv",
+             sd->mount_point, base_name);
 
     log->f_splits = fopen(full_path_splits, "w");
     if (!log->f_splits)

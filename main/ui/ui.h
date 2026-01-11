@@ -16,11 +16,12 @@ typedef enum {
     UI_PAGE_DATA = 0,
     UI_PAGE_MENU,
     UI_INTERVAL_DATA_PAGE,
+    UI_RACE_DATA_PAGE,
 
     UI_ACTIVITY_SUMMARY_PAGE,
     UI_INTERVAL_SETUP_PAGE,
+    UI_RACE_SETUP_PAGE,
     UI_SETTINGS_PAGE,
-    UI_SENSORS_CONNECTION_PAGE,
 
     UI_ACTIVITY_DETAIL_PAGE,
     UI_PAGE_COUNT,
@@ -47,6 +48,12 @@ void ui_go_to_page(ui_page_t page, bool animated);
 void ui_set_interval_start_armed(bool armed);
 bool ui_take_interval_start_armed(void);
 void ui_set_interval_data_visible(bool visible);
+
+// Race start arming (set by interval setup confirm)
+void ui_set_race_start_armed(bool armed);
+bool ui_take_race_start_armed(void);
+void ui_set_race_data_visible(bool visible);
+
 
 /* Theme helpers (currently implemented as light/dark). */
 void ui_set_dark_mode(bool enabled);
