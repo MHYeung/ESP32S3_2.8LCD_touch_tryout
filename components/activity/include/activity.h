@@ -17,6 +17,16 @@ typedef enum {
     ACTIVITY_STATE_STOPPED,
 } activity_state_t;
 
+
+typedef enum{
+    ACTIVITY_NORMAL = 0,
+    ACTIVITY_INTERVAL_NORMAL,
+    ACTIVITY_INTERVAL_STEP,
+    ACTIVITY_RACE
+} activity_type_t;
+
+
+
 /**
  * Rowing activity/session summary + running stats.
  * Think of this as your "Activity class" in C.
@@ -24,6 +34,9 @@ typedef enum {
 typedef struct {
     // Identity
     uint32_t id;
+
+    //Type / Mode
+    activity_type_t activity_type;
 
     // Time
     time_t   start_ts;        // epoch seconds
@@ -95,6 +108,17 @@ esp_err_t activity_stop(activity_t *a, time_t end_ts);
 static inline bool activity_is_recording(const activity_t *a) {
     return a && a->state == ACTIVITY_STATE_RECORDING;
 }
+
+static inline bool activity_type_is_interval(activity_type_t t) {
+    return (t == ACTIVITY_INTERVAL_NORMAL) || (t == ACTIVITY_INTERVAL_STEP);
+}
+
+static inline void activity_set_type(activity_t *a, activity_type_t t) {
+    if (!a) return;
+    a->activity_type = t;
+    a->is_interval = activity_type_is_interval(t);
+}
+
 #ifdef __cplusplus
 }
 #endif

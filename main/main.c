@@ -58,7 +58,9 @@ static const char *TAG = "app";
 typedef enum
 {
     ACT_CMD_START = 0,
-    ACT_CMD_START_INTERVAL,
+    ACT_CMD_START_INTERVAL_NORMAL,
+    ACT_CMD_START_INTERVAL_STEP,
+    ACT_CMD_START_RACE,
     ACT_CMD_STOP_SAVE,
 } act_cmd_t;
 
@@ -273,7 +275,7 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
         {
             act_cmd_t cmd = ACT_CMD_START;
             if (ui_take_interval_start_armed())
-                cmd = ACT_CMD_START_INTERVAL;
+                cmd = ACT_CMD_START_INTERVAL_NORMAL;
 
             xQueueSend(s_act_q, &cmd, 0);
         }
@@ -340,7 +342,7 @@ static void activity_worker_task(void *arg)
         if (xQueueReceive(s_act_q, &cmd, portMAX_DELAY) != pdTRUE)
             continue;
 
-        if (cmd == ACT_CMD_START_INTERVAL)
+        if (cmd == ACT_CMD_START_INTERVAL_NORMAL)
         {
             ui_go_to_page(UI_INTERVAL_DATA_PAGE, true);
         }
@@ -362,14 +364,14 @@ static void activity_worker_task(void *arg)
             uint32_t id = s_activity_next_id++;
             activity_init(&s_activity, id);
             activity_start(&s_activity, time(NULL));
-            s_activity.is_interval = false;
+            s_activity.activity_type = ACTIVITY_NORMAL;
 
             activity_log_set_split_interval(&s_act_log, s_current_split_m);
 
             if (s_sd.mounted)
             {
                 // Starts the per-stroke CSV log file on the SD card
-                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id);
+                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id, ACTIVITY_NORMAL);
             }
 
             s_last_session_stroke_count = 0;
@@ -381,7 +383,7 @@ static void activity_worker_task(void *arg)
             ESP_LOGI("ACT", "START id=%lu", (unsigned long)id);
         }
 
-        if (cmd == ACT_CMD_START_INTERVAL)
+        if (cmd == ACT_CMD_START_INTERVAL_NORMAL)
         {
             // Start normal activity logging first (same as ACT_CMD_START)
             s_activity_recording = true;
@@ -394,13 +396,13 @@ static void activity_worker_task(void *arg)
             uint32_t id = s_activity_next_id++;
             activity_init(&s_activity, id);
             activity_start(&s_activity, time(NULL));
-            s_activity.is_interval = true;
+            s_activity.activity_type = ACTIVITY_INTERVAL_NORMAL;
             resolve_interval_split_m();
             activity_log_set_split_interval(&s_act_log, s_current_split_m);
 
             if (s_sd.mounted)
             {
-                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id);
+                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id, ACTIVITY_INTERVAL_NORMAL);
             }
 
             s_last_session_stroke_count = 0;
@@ -828,7 +830,7 @@ static void stroke_task(void *arg)
                                 dist_delta_m,
                                 stroke_delta);
 
-                if (s_activity.is_interval)
+                if (s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
                 {
                     uint32_t t_ms = (uint32_t)(s_session_time_s * 1000.0f);
                     interval_program_update(true, t_ms, s_activity.distance_m, s_activity.stroke_count);
@@ -942,7 +944,7 @@ static void stroke_task(void *arg)
                     .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
                 };
                 data_page_set_values(&v);
-                if (recording && s_activity.is_interval)
+                if (recording && s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
                 {
                     interval_data_page_set_pace_s_per_500m(pace);
                     interval_data_page_set_spm(spm_disp);

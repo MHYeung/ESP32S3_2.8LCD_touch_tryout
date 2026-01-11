@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include "sd_mmc_helper.h" 
+#include "activity.h"
 #include "esp_err.h"
 
 // Struct for Split Data (The "Summary Row")
@@ -47,6 +48,7 @@ typedef struct {
     uint32_t pending;         
     char rel_path[96];        // kept for backward compat if needed
 
+    activity_type_t activity_type;
     float split_interval_m;      // Configured interval (e.g. 1000m)
     float last_split_dist_m;     // Distance when last split occurred
     float last_split_time_s;     // Time when last split occurred
@@ -54,7 +56,7 @@ typedef struct {
 } activity_log_t;
 
 void activity_log_init(activity_log_t *log);
-esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t start_time, uint32_t session_id);
+esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t start_time, uint32_t session_id, activity_type_t act_type);
 esp_err_t activity_log_stop(activity_log_t *log);
 esp_err_t activity_log_append(activity_log_t *log, const activity_log_row_t *row);
 esp_err_t activity_log_append_split(activity_log_t *log, const activity_log_split_row_t *row);

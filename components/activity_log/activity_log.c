@@ -22,6 +22,23 @@ static void format_timestamp(time_t ts, char *buf, size_t len)
     strftime(buf, len, "%Y-%m-%d %H:%M:%S", &tm_info);
 }
 
+const char* get_activity_string_fast(activity_type_t type) {
+    // defined purely for clarity; ideally usually placed in a header or static scope
+    static const char* const activity_map[] = {
+        [ACTIVITY_NORMAL]          = "Normal",
+        [ACTIVITY_INTERVAL_NORMAL] = "Intervals - Rounds",
+        [ACTIVITY_INTERVAL_STEP]   = "Intervals - Steps",
+        [ACTIVITY_RACE]            = "Race"
+    };
+
+    // Safety check to prevent crashing on invalid input
+    if (type < 0 || type >= (sizeof(activity_map) / sizeof(activity_map[0]))) {
+        return "Unknown";
+    }
+
+    return activity_map[type];
+}
+
 static void fmt_session_time_ms(float total_sec, char *out, size_t len)
 {
     if (total_sec < 0)
@@ -102,7 +119,7 @@ void activity_log_set_split_interval(activity_log_t *log, uint32_t interval_m)
     }
 }
 
-esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t start_ts, uint32_t activity_id)
+esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t start_ts, uint32_t activity_id, activity_type_t act_type)
 {
     if (!log || !sd || !sd->mounted)
         return ESP_ERR_INVALID_STATE;
@@ -113,6 +130,7 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
 
     log->split_interval_m = (cached_interval > 0.1f) ? cached_interval : 1000.0f;
     log->next_split_index = 1;
+    log->activity_type = act_type;
 
     // 1. Create Directory
     char dir_full[128];
@@ -166,7 +184,7 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
         // 2. Write Metadata Rows (Device Settings)
         fprintf(log->f_splits, "Device Info,ESP32S3-BLE Rowing Speed Coach\n");
         fprintf(log->f_splits, "Session Start,%s\n", time_str);
-        fprintf(log->f_splits, "Session Type, ");
+        fprintf(log->f_splits, "Activity Type, %s\n",  get_activity_string_fast(log->activity_type));
         fprintf(log->f_splits, "Split Setting,%.0f meters\n", log->split_interval_m); //
         fprintf(log->f_splits, "Activity ID,%u\n", (unsigned int)activity_id);
 
