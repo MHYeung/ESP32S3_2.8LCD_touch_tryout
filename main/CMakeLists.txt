@@ -12,8 +12,9 @@ idf_component_register(
         "ui/interval/ui_interval_setup_page.c"
         "ui/interval/ui_interval_data_page.c"
         "interval_program/interval_program.c"
-        "ui/race_mode/ui_race_setup_page.c" 
-        "ui/race_mode/ui_race_data_page.c"
+        "race_program/race_program.c"
+        "ui/race/ui_race_setup_page.c" 
+        "ui/race/ui_race_data_page.c"
         
     INCLUDE_DIRS
         "."
@@ -21,8 +22,9 @@ idf_component_register(
         "ui/activity_summary"
         "ui/interval"
         "ui/settings"
-        "ui/race_mode"
+        "ui/race"
         "interval_program"
+        "race_program"
     REQUIRES
         lcd_st7789
         touch_cst328

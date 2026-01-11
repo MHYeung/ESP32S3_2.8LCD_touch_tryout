@@ -23,6 +23,7 @@ static ui_status_bar_t s_status;
 static lv_obj_t *s_btn_activity = NULL;
 static lv_obj_t *s_btn_settings = NULL;
 static lv_obj_t *s_btn_interval = NULL;
+static lv_obj_t *s_btn_race = NULL;
 static lv_obj_t *s_btn_sensors = NULL;
 
 static void menu_icon_cb(lv_event_t *e)
@@ -50,6 +51,13 @@ static void menu_icon_cb(lv_event_t *e)
     {
         ESP_LOGI(TAG, "Interval pressed -> go to interval setup");
         ui_go_to_page(UI_INTERVAL_SETUP_PAGE, true);
+        return;
+    }
+
+    if (strcmp(id, "race") == 0)
+    {
+        ESP_LOGI(TAG, "Race pressed -> go to race setup");
+        ui_go_to_page(UI_RACE_SETUP_PAGE, true);
         return;
     }
 
@@ -188,14 +196,15 @@ void menu_page_create(lv_obj_t *parent)
     s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_REFRESH, "Interval", "interval", btn_size);
     s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_SETTINGS, "Settings", "settings", btn_size);
 
-    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_OK, "Summary", "summary", btn_size);
-    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_UPLOAD, "Program", "program", btn_size);
+    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_OK, "Connect", "connect", btn_size);
+    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_UPLOAD, "Race", "race", btn_size);
     s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_BLUETOOTH, "Sensors", "sensors", btn_size);
 
     // Keep your existing pointers if you want (optional)
     s_btn_activity = s_btns[0];
     s_btn_interval = s_btns[1];
-    s_btn_settings = s_btns[5];
+    s_btn_settings = s_btns[2];
+    s_btn_race     = s_btns[4];
 
     // Apply orientation-dependent layout
     menu_apply_grid_layout();
