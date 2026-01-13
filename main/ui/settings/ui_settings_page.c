@@ -351,6 +351,16 @@ void settings_page_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_body, 0, 0);
     lv_obj_add_flag(s_body, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Dark Mode Switch (Pass 'is_dark')
+    s_dark_mode_sw = create_settings_row(s_body, "Dark Mode", sw_dark_mode_event_cb, is_dark);
+
+    // Auto Rotate Switch (Pass 'is_rot')
+    create_settings_row(s_body, "Auto Rotate", sw_auto_rotate_event_cb, is_rot);
+
+    // Split Length Row
+    s_split_val_lbl = create_clickable_row(s_body, "Split Length", split_row_click_cb);
+    update_split_label_text();
+
     // Date/Time (read-only)
     s_datetime_lbl = create_value_row(s_body, "Date/Time", "");
     update_datetime_label_text();
@@ -360,16 +370,6 @@ void settings_page_create(lv_obj_t *parent)
         s_datetime_timer = NULL;
     }
     s_datetime_timer = lv_timer_create(datetime_timer_cb, 1000, NULL);
-
-    // Split Length Row
-    s_split_val_lbl = create_clickable_row(s_body, "Split Length", split_row_click_cb);
-    update_split_label_text();
-
-    // Dark Mode Switch (Pass 'is_dark')
-    s_dark_mode_sw = create_settings_row(s_body, "Dark Mode", sw_dark_mode_event_cb, is_dark);
-
-    // Auto Rotate Switch (Pass 'is_rot')
-    create_settings_row(s_body, "Auto Rotate", sw_auto_rotate_event_cb, is_rot);
 }
 
 void ui_settings_register_split_length_cb(ui_split_length_cb_t cb) { s_split_cb = cb; }

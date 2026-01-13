@@ -13,7 +13,7 @@ static const char *TAG = "ui_menu";
 
 static lv_obj_t *s_grid = NULL;
 
-#define MENU_ICON_COUNT 3
+#define MENU_ICON_COUNT 4
 static lv_obj_t *s_btns[MENU_ICON_COUNT] = {0};
 static uint8_t s_btn_count = 0;
 
@@ -23,7 +23,7 @@ static ui_status_bar_t s_status;
 static lv_obj_t *s_btn_activity = NULL;
 static lv_obj_t *s_btn_settings = NULL;
 static lv_obj_t *s_btn_interval = NULL;
-static lv_obj_t *s_btn_sensors = NULL;
+static lv_obj_t *s_btn_connect = NULL;
 
 static void menu_icon_cb(lv_event_t *e)
 {
@@ -100,30 +100,29 @@ static void menu_apply_grid_layout(void)
 
     const bool land = ui_is_landscape();
 
-    const int cols = land ? 3 : 2; // landscape: 3 columns, portrait: 2 columns
-    const int rows = land ? 1 : 2; // landscape: 2 rows,     portrait: 3 rows
+    const int cols = 2;
+    const int rows = 2;
 
     lv_obj_set_layout(s_grid, LV_LAYOUT_GRID);
 
     // Templates must be persistent (static) for LVGL
-    static lv_coord_t col_3[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t col_2[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
     static lv_coord_t row_2[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 
-    static lv_coord_t col_2[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t row_3[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-
-    if (land)
-        lv_obj_set_grid_dsc_array(s_grid, col_3, row_2);
-    else
-        lv_obj_set_grid_dsc_array(s_grid, col_2, row_3);
+    lv_obj_set_grid_dsc_array(s_grid, col_2, row_2);
 
     // Compute a square button size from available width
     lv_obj_update_layout(s_grid);
     lv_coord_t cw = lv_obj_get_content_width(s_grid);
+    lv_coord_t ch = lv_obj_get_content_height(lv_obj_get_parent(s_grid));
+    if (ch <= 0)
+        ch = lv_obj_get_content_height(s_grid);
     lv_coord_t gapc = lv_obj_get_style_pad_column(s_grid, 0);
     lv_coord_t gapr = lv_obj_get_style_pad_row(s_grid, 0);
 
-    lv_coord_t btn = (cw - gapc * (cols - 1)) / cols;
+    lv_coord_t btn_w = (cw - gapc * (cols - 1)) / cols;
+    lv_coord_t btn_h = (ch - gapr * (rows - 1)) / rows;
+    lv_coord_t btn = btn_w < btn_h ? btn_w : btn_h;
     btn = LV_CLAMP(64, btn, 96);
 
     // Resize + place buttons in row-major order
@@ -177,21 +176,20 @@ void menu_page_create(lv_obj_t *parent)
     lv_obj_set_style_pad_row(s_grid, 10, 0);
     lv_obj_set_style_pad_column(s_grid, 10, 0);
 
-    lv_coord_t content_w = lv_obj_get_content_width(s_grid);
-    lv_coord_t gap = 10; // must match pad_column above
-    lv_coord_t btn_size = (content_w - 2 * gap) / 3;
-    btn_size = LV_CLAMP(64, btn_size, 96);
+    lv_coord_t btn_size = 80; // initial size; will be updated by menu_apply_grid_layout()
 
-    // Create 3 buttons
+    // Create 4 buttons
     s_btn_count = 0;
     s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_LIST, "Activity", "activity", btn_size);
     s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_REFRESH, "Interval", "interval", btn_size);
     s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_SETTINGS, "Settings", "settings", btn_size);
+    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_WIFI, "Connect", "connect", btn_size);
 
     // Keep your existing pointers if you want (optional)
     s_btn_activity = s_btns[0];
     s_btn_interval = s_btns[1];
     s_btn_settings = s_btns[2];
+    s_btn_connect = s_btns[3];
 
     // Apply orientation-dependent layout
     menu_apply_grid_layout();
