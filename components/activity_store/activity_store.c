@@ -16,6 +16,47 @@ static bool ends_with(const char *s, const char *suffix) {
     return (memcmp(s + (ls - lf), suffix, lf) == 0);
 }
 
+static bool file_exists(const char *path) {
+    struct stat st;
+    return (path && stat(path, &st) == 0);
+}
+
+static bool resolve_dir_layout(const char *dir,
+                               char *out_strokes, size_t strokes_len,
+                               char *out_splits, size_t splits_len)
+{
+    if (!dir || !dir[0]) return false;
+
+    char strokes[256];
+    char splits[256];
+    if (snprintf(strokes, sizeof(strokes), "%s/Strokes.csv", dir) >= (int)sizeof(strokes)) return false;
+    if (snprintf(splits, sizeof(splits), "%s/Splits.csv", dir) >= (int)sizeof(splits)) return false;
+
+    if (!file_exists(strokes) && !file_exists(splits)) return false;
+
+    if (out_strokes) snprintf(out_strokes, strokes_len, "%s", strokes);
+    if (out_splits) snprintf(out_splits, splits_len, "%s", splits);
+    return true;
+}
+
+static bool resolve_old_layout(const char *base,
+                               char *out_strokes, size_t strokes_len,
+                               char *out_splits, size_t splits_len)
+{
+    if (!base || !base[0]) return false;
+
+    char old_strokes[256];
+    char old_splits[256];
+    if (snprintf(old_strokes, sizeof(old_strokes), "%s_Strokes.csv", base) >= (int)sizeof(old_strokes)) return false;
+    if (snprintf(old_splits, sizeof(old_splits), "%s_Splits.csv", base) >= (int)sizeof(old_splits)) return false;
+
+    if (!file_exists(old_strokes) && !file_exists(old_splits)) return false;
+
+    if (out_strokes) snprintf(out_strokes, strokes_len, "%s", old_strokes);
+    if (out_splits) snprintf(out_splits, splits_len, "%s", old_splits);
+    return true;
+}
+
 static void strip_newline(char *s) {
     if (!s) return;
     size_t n = strlen(s);
@@ -80,47 +121,85 @@ esp_err_t activity_store_resolve_paths(const char *in_path_or_base,
         snprintf(tmp, sizeof(tmp), SD_MOUNT "/%s", in_path_or_base);
     }
 
-    // If user passed a base (no .csv), append suffixes
+    // If user passed a base (no .csv), resolve to new or old layout
     if (!ends_with(tmp, ".csv")) {
-        // Back-compat: if old layout exists (base_Strokes.csv), keep it.
-        // Otherwise, if path looks like ".../activities/<name>", map to
-        // ".../activities/<name>/<name>" for the new per-activity folder layout.
-        bool old_layout_exists = false;
-        char old_strokes[256];
-        if (snprintf(old_strokes, sizeof(old_strokes), "%s_Strokes.csv", tmp) < (int)sizeof(old_strokes)) {
-            struct stat st;
-            old_layout_exists = (stat(old_strokes, &st) == 0);
+        if (resolve_dir_layout(tmp, out_strokes, strokes_len, out_splits, splits_len)) {
+            return ESP_OK;
         }
-        if (!old_layout_exists) {
-            const char *act_dir = strstr(tmp, "/activities/");
-            const char *last_slash = strrchr(tmp, '/');
-            if (act_dir && last_slash && last_slash[1] != '\0') {
-                const char *last = last_slash + 1;
-                const char *prev_slash = NULL;
-                for (const char *p = last_slash - 1; p > tmp; --p) {
-                    if (*p == '/') { prev_slash = p; break; }
-                }
-                if (prev_slash) {
-                    const char *prev = prev_slash + 1;
-                    size_t prev_len = (size_t)(last_slash - prev_slash - 1);
-                    size_t last_len = strlen(last);
-                    if (!(prev_len == last_len && memcmp(prev, last, last_len) == 0)) {
-                        size_t need = strlen(tmp) + 1 + last_len + 1;
-                        if (need <= sizeof(tmp)) {
-                            strcat(tmp, "/");
-                            strcat(tmp, last);
+        if (resolve_old_layout(tmp, out_strokes, strokes_len, out_splits, splits_len)) {
+            return ESP_OK;
+        }
+
+        // If the base accidentally includes duplicate "<name>/<name>", try dropping the last segment.
+        const char *last_slash = strrchr(tmp, '/');
+        if (last_slash && last_slash[1] != '\0') {
+            const char *prev_slash = NULL;
+            for (const char *p = last_slash - 1; p > tmp; --p) {
+                if (*p == '/') { prev_slash = p; break; }
+            }
+            if (prev_slash) {
+                size_t last_len = strlen(last_slash + 1);
+                size_t prev_len = (size_t)(last_slash - prev_slash - 1);
+                if (prev_len == last_len && memcmp(prev_slash + 1, last_slash + 1, last_len) == 0) {
+                    char dedup[256];
+                    size_t keep = (size_t)(last_slash - tmp);
+                    if (keep < sizeof(dedup)) {
+                        memcpy(dedup, tmp, keep);
+                        dedup[keep] = 0;
+                        if (resolve_dir_layout(dedup, out_strokes, strokes_len, out_splits, splits_len)) {
+                            return ESP_OK;
                         }
                     }
                 }
             }
         }
 
+        // As a fallback, map ".../activities/<name>" to ".../activities/<name>/<name>"
+        // for older callers that expect the duplicate base form.
+        if (last_slash && last_slash[1] != '\0') {
+            const char *last = last_slash + 1;
+            size_t need = strlen(tmp) + 1 + strlen(last) + 1;
+            if (need <= sizeof(tmp)) {
+                strcat(tmp, "/");
+                strcat(tmp, last);
+                if (resolve_dir_layout(tmp, out_strokes, strokes_len, out_splits, splits_len)) {
+                    return ESP_OK;
+                }
+                if (resolve_old_layout(tmp, out_strokes, strokes_len, out_splits, splits_len)) {
+                    return ESP_OK;
+                }
+            }
+        }
+
+        // Final fallback: assume old suffix naming even if files don't exist yet.
         if (out_strokes) snprintf(out_strokes, strokes_len, "%s_Strokes.csv", tmp);
         if (out_splits)  snprintf(out_splits,  splits_len,  "%s_Splits.csv",  tmp);
         return ESP_OK;
     }
 
     // If user passed a specific CSV, derive the other if possible
+    if (ends_with(tmp, "/Strokes.csv")) {
+        if (out_strokes) snprintf(out_strokes, strokes_len, "%s", tmp);
+        if (out_splits) {
+            char base[256];
+            snprintf(base, sizeof(base), "%s", tmp);
+            base[strlen(base) - strlen("/Strokes.csv")] = 0;
+            snprintf(out_splits, splits_len, "%s/Splits.csv", base);
+        }
+        return ESP_OK;
+    }
+
+    if (ends_with(tmp, "/Splits.csv")) {
+        if (out_splits) snprintf(out_splits, splits_len, "%s", tmp);
+        if (out_strokes) {
+            char base[256];
+            snprintf(base, sizeof(base), "%s", tmp);
+            base[strlen(base) - strlen("/Splits.csv")] = 0;
+            snprintf(out_strokes, strokes_len, "%s/Strokes.csv", base);
+        }
+        return ESP_OK;
+    }
+
     if (ends_with(tmp, "_Strokes.csv")) {
         if (out_strokes) snprintf(out_strokes, strokes_len, "%s", tmp);
         if (out_splits) {

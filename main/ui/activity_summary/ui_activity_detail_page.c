@@ -126,7 +126,7 @@ static void normalize_base_full(const char *csv_path)
     trim_tail(s_base_full);
 
     // strip known suffixes if user passed strokes/splits csv
-    const char *suffixes[] = {"_Strokes.csv", "_Splits.csv", ".csv"};
+    const char *suffixes[] = {"/Strokes.csv", "/Splits.csv", "_Strokes.csv", "_Splits.csv", ".csv"};
     for (size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++)
     {
         size_t bl = strlen(s_base_full);
@@ -402,7 +402,7 @@ static void ensure_loader(void)
 
     BaseType_t ok = xTaskCreatePinnedToCore(detail_load_task,
                                             "act_detail_loader",
-                                            4096,
+                                            6144,
                                             NULL,
                                             5,
                                             &s_load_task,
