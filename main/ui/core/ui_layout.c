@@ -29,6 +29,14 @@ void ui_pages_relayout(void)
     {
         lv_obj_set_size(ui_s_page_data, lv_pct(100), lv_pct(100));
         lv_obj_set_pos(ui_s_page_data, 0, 0);
+        if (ui_s_current_page == UI_PAGE_DATA)
+        {
+            lv_obj_clear_flag(ui_s_page_data, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+        {
+            lv_obj_add_flag(ui_s_page_data, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     if (ui_s_page_interval_data)
@@ -50,7 +58,7 @@ void ui_pages_relayout(void)
     {
         lv_obj_set_size(ui_s_page_menu, lv_pct(100), lv_pct(100));
 
-        if (ui_s_current_page == UI_PAGE_MENU || ui_s_current_page == UI_SETTINGS_PAGE || ui_s_current_page == UI_INTERVAL_SETUP_PAGE)
+        if (ui_s_current_page == UI_PAGE_MENU)
         {
             lv_obj_set_pos(ui_s_page_menu, 0, 0);
             lv_obj_clear_flag(ui_s_page_menu, LV_OBJ_FLAG_HIDDEN);
@@ -126,7 +134,7 @@ void ui_pages_relayout(void)
     {
         lv_obj_set_size(ui_s_top_gesture, lv_pct(100), lv_pct(15));
         lv_obj_set_pos(ui_s_top_gesture, 0, 0);
-        if (ui_s_current_page == UI_PAGE_DATA && !ui_s_transitioning)
+        if ((ui_s_current_page == UI_PAGE_DATA || ui_s_current_page == UI_INTERVAL_DATA_PAGE) && !ui_s_transitioning)
         {
             lv_obj_clear_flag(ui_s_top_gesture, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(ui_s_top_gesture);
@@ -329,6 +337,11 @@ void ui_go_to_page(ui_page_t target, bool animated)
     // MENU -> DATA (close menu)
     else if (target == UI_PAGE_DATA && ui_s_current_page == UI_PAGE_MENU)
     {
+        if (ui_s_page_data)
+        {
+            lv_obj_clear_flag(ui_s_page_data, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(ui_s_page_data, 0, 0);
+        }
         anim_obj = ui_s_page_menu;
         from_y = 0;
         to_y = -h;
@@ -352,11 +365,26 @@ void ui_go_to_page(ui_page_t target, bool animated)
     }
     else if (target == UI_PAGE_DATA && ui_s_current_page == UI_INTERVAL_DATA_PAGE)
     {
+        if (ui_s_page_data)
+        {
+            lv_obj_clear_flag(ui_s_page_data, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(ui_s_page_data, 0, 0);
+        }
         anim_obj = ui_s_page_interval_data;
         from_y = 0;
         to_y = w;
         next_page = UI_PAGE_DATA;
         use_x = true;
+    }
+    else if (target == UI_PAGE_MENU && ui_s_current_page == UI_INTERVAL_DATA_PAGE)
+    {
+        anim_obj = ui_s_page_menu;
+        lv_obj_clear_flag(ui_s_page_menu, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_y(ui_s_page_menu, -h);
+        lv_obj_move_foreground(ui_s_page_menu);
+        from_y = -h;
+        to_y = 0;
+        next_page = UI_PAGE_MENU;
     }
     // MENU -> ACTIVITY_SUMMARY
     else if (target == UI_ACTIVITY_SUMMARY_PAGE && ui_s_current_page == UI_PAGE_MENU)
@@ -372,6 +400,11 @@ void ui_go_to_page(ui_page_t target, bool animated)
     // ACTIVITY_SUMMARY -> MENU
     else if (target == UI_PAGE_MENU && ui_s_current_page == UI_ACTIVITY_SUMMARY_PAGE)
     {
+        if (ui_s_page_menu)
+        {
+            lv_obj_clear_flag(ui_s_page_menu, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(ui_s_page_menu, 0, 0);
+        }
         anim_obj = ui_s_page_activity_summary;
         from_y = 0;
         to_y = -h;
@@ -414,6 +447,11 @@ void ui_go_to_page(ui_page_t target, bool animated)
     // Interval Setup -> Menu
     else if (target == UI_PAGE_MENU && ui_s_current_page == UI_INTERVAL_SETUP_PAGE)
     {
+        if (ui_s_page_menu)
+        {
+            lv_obj_clear_flag(ui_s_page_menu, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(ui_s_page_menu, 0, 0);
+        }
         anim_obj = ui_s_page_interval_setup;
         from_y = 0;
         to_y = -h;
@@ -447,6 +485,11 @@ void ui_go_to_page(ui_page_t target, bool animated)
     // SETTINGS -> MENU (close settings)
     else if (target == UI_PAGE_MENU && ui_s_current_page == UI_SETTINGS_PAGE)
     {
+        if (ui_s_page_menu)
+        {
+            lv_obj_clear_flag(ui_s_page_menu, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(ui_s_page_menu, 0, 0);
+        }
         anim_obj = ui_s_page_settings;
         from_y = 0;
         to_y = -h;

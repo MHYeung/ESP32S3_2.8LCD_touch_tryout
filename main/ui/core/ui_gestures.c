@@ -4,7 +4,8 @@ void top_swipe_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
-    if (!indev || ui_s_transitioning || ui_s_current_page != UI_PAGE_DATA)
+    if (!indev || ui_s_transitioning ||
+        (ui_s_current_page != UI_PAGE_DATA && ui_s_current_page != UI_INTERVAL_DATA_PAGE))
         return;
 
     if (code == LV_EVENT_PRESSED)
