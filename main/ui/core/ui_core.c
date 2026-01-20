@@ -77,6 +77,11 @@ ui_page_t ui_get_current_page(void)
     return ui_s_current_page;
 }
 
+bool ui_is_modal_active(void)
+{
+    return ui_s_modal_active;
+}
+
 void ui_init(lv_disp_t *disp)
 {
     ui_s_disp = disp;

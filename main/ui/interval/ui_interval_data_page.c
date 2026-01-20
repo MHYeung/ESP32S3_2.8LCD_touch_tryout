@@ -4,6 +4,7 @@
 #include "ui.h"
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include "lvgl.h"
 
 static lv_obj_t *s_root = NULL;
@@ -42,6 +43,17 @@ static uint32_t s_complete_hide_at_ms = 0;
 static void start_prompt_show_async(void *p);
 static void start_prompt_hide_async(void *p);
 static void complete_prompt_show_async(void *p);
+
+static void label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if (!label || !text)
+        return;
+    const char *cur = lv_label_get_text(label);
+    if (!cur || strcmp(cur, text) != 0)
+    {
+        lv_label_set_text(label, text);
+    }
+}
 
 static void complete_overlay_event_cb(lv_event_t *e)
 {
@@ -289,12 +301,14 @@ static void update_noti(interval_ui_state_t st)
         if (s_noti_show_start)
         {
             const char *start = (st.phase == INTERVAL_PHASE_WORK) ? "WORK start" : "REST start";
-            lv_label_set_text(s_noti_lbl, start);
+            label_set_text_if_changed(s_noti_lbl, start);
         }
         else if (st.unit == INTERVAL_UNIT_TIME && st.remaining <= 5)
         {
             const char *next = (st.phase == INTERVAL_PHASE_WORK) ? "REST" : "WORK";
-            lv_label_set_text_fmt(s_noti_lbl, "%s in %us", next, (unsigned)st.remaining);
+            char buf[24];
+            snprintf(buf, sizeof(buf), "%s in %us", next, (unsigned)st.remaining);
+            label_set_text_if_changed(s_noti_lbl, buf);
         }
         else
         {
@@ -320,21 +334,25 @@ static void tick_cb(lv_timer_t *t)
         interval_program_get_config(&cfg);
 
         if (s_live_rem_val)
-            lv_label_set_text(s_live_rem_val, "READY");
+            label_set_text_if_changed(s_live_rem_val, "READY");
         if (s_live_rem_title)
-            lv_label_set_text(s_live_rem_title, "Remaining");
+            label_set_text_if_changed(s_live_rem_title, "Remaining");
         if (s_live_round_val)
-            lv_label_set_text_fmt(s_live_round_val, "0/%u", cfg.rounds);
+        {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "0/%u", cfg.rounds);
+            label_set_text_if_changed(s_live_round_val, buf);
+        }
         if (s_live_round_title)
-            lv_label_set_text(s_live_round_title, "Set");
+            label_set_text_if_changed(s_live_round_title, "Set");
         if (s_live_pace_val)
-            lv_label_set_text(s_live_pace_val, "--:--.-");
+            label_set_text_if_changed(s_live_pace_val, "--:--.-");
         if (s_live_pace_title)
-            lv_label_set_text(s_live_pace_title, "Pace (/500m)");
+            label_set_text_if_changed(s_live_pace_title, "Pace (/500m)");
         if (s_live_spm_val)
-            lv_label_set_text(s_live_spm_val, "--");
+            label_set_text_if_changed(s_live_spm_val, "--");
         if (s_live_spm_title)
-            lv_label_set_text(s_live_spm_title, "SPM");
+            label_set_text_if_changed(s_live_spm_title, "SPM");
         if (s_noti_overlay)
             lv_obj_add_flag(s_noti_overlay, LV_OBJ_FLAG_HIDDEN);
         return;
@@ -343,7 +361,7 @@ static void tick_cb(lv_timer_t *t)
     char rem[24];
     fmt_val(rem, sizeof(rem), st.unit, st.remaining);
     if (s_live_rem_val)
-        lv_label_set_text(s_live_rem_val, rem);
+        label_set_text_if_changed(s_live_rem_val, rem);
 
     if (s_live_rem_title)
     {
@@ -351,30 +369,34 @@ static void tick_cb(lv_timer_t *t)
             (st.phase == INTERVAL_PHASE_WORK) ? "WORK" :
             (st.phase == INTERVAL_PHASE_REST) ? "REST" :
             (st.phase == INTERVAL_PHASE_DONE) ? "DONE" : "IDLE";
-        lv_label_set_text_fmt(s_live_rem_title, "Remaining: %s", ph);
+        char title[32];
+        snprintf(title, sizeof(title), "Remaining: %s", ph);
+        label_set_text_if_changed(s_live_rem_title, title);
     }
 
     if (s_live_round_val) {
         if (st.rounds) {
-            lv_label_set_text_fmt(s_live_round_val, "%u/%u", st.round_idx, st.rounds);
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%u/%u", st.round_idx, st.rounds);
+            label_set_text_if_changed(s_live_round_val, buf);
         } else {
-            lv_label_set_text(s_live_round_val, "--");
+            label_set_text_if_changed(s_live_round_val, "--");
         }
     }
     if (s_live_round_title)
-        lv_label_set_text(s_live_round_title, "Set");
+        label_set_text_if_changed(s_live_round_title, "Set");
 
     if (s_live_pace_val) {
         char pace[16];
         fmt_pace(s_live_pace_s, pace, sizeof(pace));
-        lv_label_set_text(s_live_pace_val, pace);
+        label_set_text_if_changed(s_live_pace_val, pace);
     }
     if (s_live_pace_title)
-        lv_label_set_text(s_live_pace_title, "Pace (/500m)");
+        label_set_text_if_changed(s_live_pace_title, "Pace (/500m)");
 
     if (s_live_spm_val) {
         if (!isfinite(s_live_spm)) {
-            lv_label_set_text(s_live_spm_val, "--");
+            label_set_text_if_changed(s_live_spm_val, "--");
         } else {
             char buf[12];
             float frac = fabsf(s_live_spm - floorf(s_live_spm));
@@ -382,11 +404,11 @@ static void tick_cb(lv_timer_t *t)
                 snprintf(buf, sizeof(buf), "%.1f", (double)s_live_spm);
             else
                 snprintf(buf, sizeof(buf), "%.0f", (double)s_live_spm);
-            lv_label_set_text(s_live_spm_val, buf);
+            label_set_text_if_changed(s_live_spm_val, buf);
         }
     }
     if (s_live_spm_title)
-        lv_label_set_text(s_live_spm_title, "SPM");
+        label_set_text_if_changed(s_live_spm_title, "SPM");
 
     update_noti(st);
 

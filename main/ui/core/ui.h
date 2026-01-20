@@ -38,6 +38,7 @@ typedef void (*ui_stop_save_confirm_cb_t)(void);
 void ui_register_stop_save_confirm_cb(ui_stop_save_confirm_cb_t cb);
 void ui_show_stop_save_prompt(void);
 void ui_show_stop_save_prompt_with_text(const char *msg);
+bool ui_is_modal_active(void);
 
 void ui_set_orientation(ui_orientation_t o);
 void ui_go_to_page(ui_page_t page, bool animated);

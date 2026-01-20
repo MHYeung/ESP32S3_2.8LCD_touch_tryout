@@ -24,6 +24,13 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
     {
     case PWR_KEY_EVT_ACTIVITY_TOGGLE:
     {
+        ui_page_t p = ui_get_current_page();
+        if (p != UI_PAGE_DATA && p != UI_INTERVAL_DATA_PAGE)
+        {
+            ESP_LOGI(TAG, "PWR toggle ignored (page=%d)", (int)p);
+            break;
+        }
+
         if (!s_activity_recording)
         {
             act_cmd_t cmd = ACT_CMD_START;
@@ -35,7 +42,6 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
         else
         {
             // Recording -> ask user
-            ui_page_t p = ui_get_current_page();
             if (p == UI_INTERVAL_DATA_PAGE)
             {
                 ui_show_stop_save_prompt_with_text("Finish interval and save?");

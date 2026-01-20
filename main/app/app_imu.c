@@ -536,52 +536,55 @@ void stroke_task(void *arg)
             s_interval_prev_recording = s_activity_recording;
 
             // UI Update
-            // 1) Time only @ 10Hz
-            TickType_t now = xTaskGetTickCount();
-            if ((now - last_ui_tick) >= ui_period)
+            if (!ui_is_modal_active())
             {
-                last_ui_tick = now;
-                data_page_set_time_s(recording ? s_session_time_s : NAN);
-            }
-            // 2) Non-time metrics only on stroke count OR state change
-            bool force_full_redraw = (recording != s_last_recording_ui);
-            if (force_full_redraw)
-            {
-                s_last_recording_ui = recording;
-            }
-            if (force_full_redraw || (recording && ev == STROKE_EVENT_CATCH))
-            {
-                float spm_raw_ui = s_last_valid_spm;
-                if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f)
-                    spm_raw_ui = NAN;
-
-                float spm_disp = spm_raw_ui;
-                if (isfinite(spm_disp))
-                    spm_disp = ceilf(spm_disp * 2.0f) / 2.0f;
-
-                float pace = (speed_mps > 0.2f) ? (500.0f / speed_mps) : NAN;
-                float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : NAN;
-
-                data_values_t v = {
-                    .time_s = recording ? s_session_time_s : NAN,
-                    .distance_m = recording ? s_activity.distance_m : NAN,
-                    .pace_s_per_500m = recording ? pace : NAN,
-                    .avg_pace_s_per_500m = recording ? avg_pace_s : NAN,
-                    .speed_mps = recording ? speed_mps : NAN,
-                    .spm = recording ? spm_disp : NAN,
-                    .power_w = NAN,
-                    .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
-                };
-                data_page_set_values(&v);
-                if (recording && s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
+                // 1) Time only @ 10Hz
+                TickType_t now = xTaskGetTickCount();
+                if ((now - last_ui_tick) >= ui_period)
                 {
-                    interval_data_page_set_pace_s_per_500m(pace);
-                    interval_data_page_set_spm(spm_disp);
+                    last_ui_tick = now;
+                    data_page_set_time_s(recording ? s_session_time_s : NAN);
                 }
-                else
+                // 2) Non-time metrics only on stroke count OR state change
+                bool force_full_redraw = (recording != s_last_recording_ui);
+                if (force_full_redraw)
                 {
-                    interval_data_page_set_pace_s_per_500m(NAN);
-                    interval_data_page_set_spm(NAN);
+                    s_last_recording_ui = recording;
+                }
+                if (force_full_redraw || (recording && ev == STROKE_EVENT_CATCH))
+                {
+                    float spm_raw_ui = s_last_valid_spm;
+                    if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f)
+                        spm_raw_ui = NAN;
+
+                    float spm_disp = spm_raw_ui;
+                    if (isfinite(spm_disp))
+                        spm_disp = ceilf(spm_disp * 2.0f) / 2.0f;
+
+                    float pace = (speed_mps > 0.2f) ? (500.0f / speed_mps) : NAN;
+                    float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : NAN;
+
+                    data_values_t v = {
+                        .time_s = recording ? s_session_time_s : NAN,
+                        .distance_m = recording ? s_activity.distance_m : NAN,
+                        .pace_s_per_500m = recording ? pace : NAN,
+                        .avg_pace_s_per_500m = recording ? avg_pace_s : NAN,
+                        .speed_mps = recording ? speed_mps : NAN,
+                        .spm = recording ? spm_disp : NAN,
+                        .power_w = NAN,
+                        .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
+                    };
+                    data_page_set_values(&v);
+                    if (recording && s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
+                    {
+                        interval_data_page_set_pace_s_per_500m(pace);
+                        interval_data_page_set_spm(spm_disp);
+                    }
+                    else
+                    {
+                        interval_data_page_set_pace_s_per_500m(NAN);
+                        interval_data_page_set_spm(NAN);
+                    }
                 }
             }
         }

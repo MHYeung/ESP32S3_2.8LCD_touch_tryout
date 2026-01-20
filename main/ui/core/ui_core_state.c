@@ -22,6 +22,7 @@ ui_page_t ui_s_current_page = UI_PAGE_DATA;
 bool ui_s_transitioning = false;
 bool ui_s_interval_start_armed = false;
 bool ui_s_interval_data_visible = false;
+volatile bool ui_s_modal_active = false;
 
 bool ui_s_top_swipe_armed = false;
 lv_point_t ui_s_top_swipe_sum = {0};

@@ -196,6 +196,17 @@ static void metric_title_unit(data_metric_t metric, const char **title, const ch
     }
 }
 
+static void label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if (!label || !text)
+        return;
+    const char *cur = lv_label_get_text(label);
+    if (!cur || strcmp(cur, text) != 0)
+    {
+        lv_label_set_text(label, text);
+    }
+}
+
 static void apply_metric_to_slot(int idx)
 {
     if (idx < 0 || idx >= DATA_SLOT_MAX) return;
@@ -265,9 +276,10 @@ static void apply_metric_to_slot(int idx)
         break;
     }
 
-    lv_label_set_text(s_slot_title[idx], title);
-    lv_label_set_text(s_slot_value[idx], value_buf);
-    lv_label_set_text(s_slot_unit[idx], unit_override ? unit_override : unit);
+    const char *unit_text = unit_override ? unit_override : unit;
+    label_set_text_if_changed(s_slot_title[idx], title);
+    label_set_text_if_changed(s_slot_value[idx], value_buf);
+    label_set_text_if_changed(s_slot_unit[idx], unit_text);
 }
 
 static void slot_event_cb(lv_event_t *e)

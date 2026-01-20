@@ -26,6 +26,7 @@ extern ui_page_t ui_s_current_page;
 extern bool ui_s_transitioning;
 extern bool ui_s_interval_start_armed;
 extern bool ui_s_interval_data_visible;
+extern volatile bool ui_s_modal_active;
 
 extern bool ui_s_top_swipe_armed;
 extern lv_point_t ui_s_top_swipe_sum;

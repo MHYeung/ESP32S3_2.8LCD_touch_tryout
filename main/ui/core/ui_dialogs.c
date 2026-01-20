@@ -60,6 +60,11 @@ static void style_dialog_panel(lv_obj_t *panel, lv_obj_t *btn_box, lv_obj_t *btn
     }
 }
 
+static void update_modal_active(void)
+{
+    ui_s_modal_active = (ui_s_shutdown_overlay != NULL || ui_s_stop_save_overlay != NULL);
+}
+
 void ui_relayout_dialogs(void)
 {
     if (ui_s_shutdown_overlay)
@@ -85,6 +90,7 @@ static void shutdown_btn_event_cb(lv_event_t *e)
         ui_s_shutdown_panel = NULL;
         ui_s_shutdown_btn_box = NULL;
     }
+    update_modal_active();
 
     if (strcmp(tag, "shutdown") == 0)
     {
@@ -149,6 +155,7 @@ static void shutdown_prompt_create(void *unused)
 
     // Initial Layout
     ui_relayout_dialogs();
+    update_modal_active();
 }
 
 void ui_show_shutdown_prompt(void)
@@ -169,6 +176,7 @@ static void stop_save_btn_event_cb(lv_event_t *e)
         ui_s_stop_save_panel = NULL;
         ui_s_stop_save_btn_box = NULL;
     }
+    update_modal_active();
 
     if (strcmp(tag, "stop_save") == 0)
     {
@@ -233,6 +241,7 @@ static void stop_save_prompt_create(void *unused)
 
     // Initial Layout
     ui_relayout_dialogs();
+    update_modal_active();
 }
 
 void ui_show_stop_save_prompt(void)
