@@ -564,16 +564,20 @@ void stroke_task(void *arg)
                     float pace = (speed_mps > 0.2f) ? (500.0f / speed_mps) : NAN;
                     float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : NAN;
 
-                    data_values_t v = {
-                        .time_s = recording ? s_session_time_s : NAN,
-                        .distance_m = recording ? s_activity.distance_m : NAN,
-                        .pace_s_per_500m = recording ? pace : NAN,
-                        .avg_pace_s_per_500m = recording ? avg_pace_s : NAN,
-                        .speed_mps = recording ? speed_mps : NAN,
-                        .spm = recording ? spm_disp : NAN,
-                        .power_w = NAN,
-                        .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
-                    };
+                float stroke_len_disp = NAN;
+                if (recording && stroke_len_m > 0.01f)
+                    stroke_len_disp = stroke_len_m;
+
+                data_values_t v = {
+                    .time_s = recording ? s_session_time_s : NAN,
+                    .distance_m = recording ? s_activity.distance_m : NAN,
+                    .pace_s_per_500m = recording ? pace : NAN,
+                    .avg_pace_s_per_500m = recording ? avg_pace_s : NAN,
+                    .speed_mps = recording ? speed_mps : NAN,
+                    .spm = recording ? spm_disp : NAN,
+                    .stroke_len_m = stroke_len_disp,
+                    .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
+                };
                     data_page_set_values(&v);
                     if (recording && s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
                     {

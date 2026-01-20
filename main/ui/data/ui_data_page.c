@@ -181,9 +181,9 @@ static void metric_title_unit(data_metric_t metric, const char **title, const ch
         *title = "SPM";
         *unit = "";
         break;
-    case DATA_METRIC_POWER:
-        *title = "Power";
-        *unit = "W";
+    case DATA_METRIC_STROKE_LEN:
+        *title = "Stroke Len";
+        *unit = "m";
         break;
     case DATA_METRIC_STROKE_COUNT:
         *title = "Strokes";
@@ -256,11 +256,11 @@ static void apply_metric_to_slot(int idx)
             }
         }
         break;
-    case DATA_METRIC_POWER:
-        if (!isfinite(s_values.power_w) || s_values.power_w < 0.0f) {
+    case DATA_METRIC_STROKE_LEN:
+        if (!isfinite(s_values.stroke_len_m) || s_values.stroke_len_m <= 0.0f) {
             snprintf(value_buf, sizeof(value_buf), "--");
         } else {
-            snprintf(value_buf, sizeof(value_buf), "%.0f", (double)s_values.power_w);
+            snprintf(value_buf, sizeof(value_buf), "%.1f", (double)s_values.stroke_len_m);
         }
         break;
     case DATA_METRIC_STROKE_COUNT:
