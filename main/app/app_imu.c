@@ -14,10 +14,61 @@
 #include "ui_interval_data_page.h"
 #include "ui_status_bar.h"
 #include <time.h>
+#include <string.h>
 #include "qmi8658.h"
 #include "stroke_detection.h"
 
 static const char *TAG = "app";
+
+static const char *interval_unit_to_csv(interval_unit_t unit)
+{
+    switch (unit)
+    {
+    case INTERVAL_UNIT_TIME:
+        return "s";
+    case INTERVAL_UNIT_DISTANCE:
+        return "m";
+    case INTERVAL_UNIT_STROKES:
+        return "st";
+    default:
+        return "";
+    }
+}
+
+static const char *interval_phase_to_str(interval_phase_t phase)
+{
+    return (phase == INTERVAL_PHASE_WORK) ? "WORK" : "REST";
+}
+
+static void build_interval_row(activity_log_interval_row_t *row,
+                               interval_phase_t phase,
+                               uint16_t round_idx,
+                               const interval_target_t *target,
+                               float phase_time_s,
+                               float phase_dist_m,
+                               uint32_t phase_strokes)
+{
+    if (!row)
+        return;
+
+    if (phase_time_s < 0.0f)
+        phase_time_s = 0.0f;
+    if (phase_dist_m < 0.0f)
+        phase_dist_m = 0.0f;
+
+    memset(row, 0, sizeof(*row));
+    row->round_index = round_idx;
+    strncpy(row->phase, interval_phase_to_str(phase), sizeof(row->phase) - 1);
+    if (target)
+    {
+        row->target_value = target->value;
+        strncpy(row->target_unit, interval_unit_to_csv(target->unit), sizeof(row->target_unit) - 1);
+    }
+    row->phase_time_s = phase_time_s;
+    row->phase_distance_m = phase_dist_m;
+    row->phase_pace_s = (phase_dist_m > 0.1f) ? (phase_time_s / (phase_dist_m / 500.0f)) : 0.0f;
+    row->avg_spm = (phase_time_s > 0.1f) ? ((float)phase_strokes * 60.0f / phase_time_s) : 0.0f;
+}
 
 static ui_orientation_t decide_orientation_from_accel(float ax, float ay, float az)
 {
@@ -88,6 +139,15 @@ void stroke_task(void *arg)
     static float s_total_distance = NAN;
 
     static bool s_last_recording_ui = false;
+    static bool s_interval_prev_recording = false;
+    static bool s_interval_phase_active = false;
+    static interval_phase_t s_interval_log_phase = INTERVAL_PHASE_IDLE;
+    static uint16_t s_interval_log_round = 0;
+    static float s_interval_phase_start_time_s = 0.0f;
+    static float s_interval_phase_start_dist_m = 0.0f;
+    static uint32_t s_interval_phase_start_strokes = 0;
+    static bool s_interval_cfg_valid = false;
+    static interval_config_t s_interval_log_cfg = {0};
 
     const float fs_hz = 200.0f;
     const stroke_detection_cfg_t cfg = {
@@ -278,7 +338,10 @@ void stroke_task(void *arg)
             // --- End Derived Metrics ---
 
             bool need_log = false;
+            bool need_interval_log = false;
+            bool interval_was_recording = s_interval_prev_recording;
             activity_log_row_t row = {0};
+            activity_log_interval_row_t interval_row = {0};
 
             if (s_activity_mutex)
                 xSemaphoreTake(s_activity_mutex, portMAX_DELAY);
@@ -298,21 +361,88 @@ void stroke_task(void *arg)
                                 dist_delta_m,
                                 stroke_delta);
 
+                bool is_interval = activity_type_is_interval(s_activity.activity_type);
+                if (is_interval && !interval_was_recording)
+                {
+                    interval_program_get_config(&s_interval_log_cfg);
+                    s_interval_cfg_valid = true;
+                    s_interval_phase_active = false;
+                    s_interval_log_phase = INTERVAL_PHASE_IDLE;
+                    s_interval_log_round = 0;
+                }
+
+                interval_ui_state_t ist = {0};
+                bool interval_ui_valid = false;
                 if (s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
                 {
                     uint32_t t_ms = (uint32_t)(s_session_time_s * 1000.0f);
                     interval_program_update(true, t_ms, s_activity.distance_m, s_activity.stroke_count);
-                    if (!s_interval_done_queued)
+                    interval_program_get_ui(&ist);
+                    interval_ui_valid = true;
+                    if (!s_interval_done_queued && ist.phase == INTERVAL_PHASE_DONE)
                     {
-                        interval_ui_state_t ist = {0};
-                        interval_program_get_ui(&ist);
-                        if (ist.phase == INTERVAL_PHASE_DONE)
+                        s_interval_done_queued = true;
+                        interval_data_page_show_complete_prompt();
+                        act_cmd_t done_cmd = ACT_CMD_STOP_SAVE;
+                        xQueueSend(s_act_q, &done_cmd, 0);
+                    }
+                }
+
+                if (is_interval && interval_ui_valid)
+                {
+                    if (ist.phase == INTERVAL_PHASE_WORK || ist.phase == INTERVAL_PHASE_REST)
+                    {
+                        if (!s_interval_phase_active)
                         {
-                            s_interval_done_queued = true;
-                            interval_data_page_show_complete_prompt();
-                            act_cmd_t done_cmd = ACT_CMD_STOP_SAVE;
-                            xQueueSend(s_act_q, &done_cmd, 0);
+                            s_interval_phase_active = true;
+                            s_interval_log_phase = ist.phase;
+                            s_interval_log_round = ist.round_idx;
+                            s_interval_phase_start_time_s = s_session_time_s;
+                            s_interval_phase_start_dist_m = s_activity.distance_m;
+                            s_interval_phase_start_strokes = s_activity.stroke_count;
                         }
+                        else if (ist.phase != s_interval_log_phase || ist.round_idx != s_interval_log_round)
+                        {
+                            const interval_target_t *target = NULL;
+                            if (s_interval_cfg_valid)
+                            {
+                                target = (s_interval_log_phase == INTERVAL_PHASE_WORK) ? &s_interval_log_cfg.work : &s_interval_log_cfg.rest;
+                            }
+                            build_interval_row(&interval_row,
+                                               s_interval_log_phase,
+                                               s_interval_log_round,
+                                               target,
+                                               s_session_time_s - s_interval_phase_start_time_s,
+                                               s_activity.distance_m - s_interval_phase_start_dist_m,
+                                               s_activity.stroke_count - s_interval_phase_start_strokes);
+                            need_interval_log = true;
+
+                            s_interval_log_phase = ist.phase;
+                            s_interval_log_round = ist.round_idx;
+                            s_interval_phase_start_time_s = s_session_time_s;
+                            s_interval_phase_start_dist_m = s_activity.distance_m;
+                            s_interval_phase_start_strokes = s_activity.stroke_count;
+                        }
+                    }
+                    else if (s_interval_phase_active &&
+                             (ist.phase == INTERVAL_PHASE_DONE || ist.phase == INTERVAL_PHASE_IDLE))
+                    {
+                        const interval_target_t *target = NULL;
+                        if (s_interval_cfg_valid)
+                        {
+                            target = (s_interval_log_phase == INTERVAL_PHASE_WORK) ? &s_interval_log_cfg.work : &s_interval_log_cfg.rest;
+                        }
+                        build_interval_row(&interval_row,
+                                           s_interval_log_phase,
+                                           s_interval_log_round,
+                                           target,
+                                           s_session_time_s - s_interval_phase_start_time_s,
+                                           s_activity.distance_m - s_interval_phase_start_dist_m,
+                                           s_activity.stroke_count - s_interval_phase_start_strokes);
+                        need_interval_log = true;
+                        s_interval_phase_active = false;
+                        s_interval_log_phase = INTERVAL_PHASE_IDLE;
+                        s_interval_log_round = 0;
                     }
                 }
 
@@ -361,6 +491,26 @@ void stroke_task(void *arg)
             }
             else
             {
+                if (interval_was_recording && s_interval_phase_active)
+                {
+                    const interval_target_t *target = NULL;
+                    if (s_interval_cfg_valid)
+                    {
+                        target = (s_interval_log_phase == INTERVAL_PHASE_WORK) ? &s_interval_log_cfg.work : &s_interval_log_cfg.rest;
+                    }
+                    build_interval_row(&interval_row,
+                                       s_interval_log_phase,
+                                       s_interval_log_round,
+                                       target,
+                                       s_session_time_s - s_interval_phase_start_time_s,
+                                       s_activity.distance_m - s_interval_phase_start_dist_m,
+                                       s_activity.stroke_count - s_interval_phase_start_strokes);
+                    need_interval_log = true;
+                    s_interval_phase_active = false;
+                    s_interval_log_phase = INTERVAL_PHASE_IDLE;
+                    s_interval_log_round = 0;
+                }
+                s_interval_cfg_valid = false;
                 s_session_time_s = 0.0f;
             }
 
@@ -369,10 +519,21 @@ void stroke_task(void *arg)
 
             if (need_log && s_log_q)
             {
-                xQueueSend(s_log_q, &row, 0);
+                activity_log_msg_t msg = {0};
+                msg.kind = ACT_LOG_ROW_STROKE;
+                msg.data.stroke = row;
+                xQueueSend(s_log_q, &msg, 0);
+            }
+            if (need_interval_log && s_log_q)
+            {
+                activity_log_msg_t msg = {0};
+                msg.kind = ACT_LOG_ROW_INTERVAL;
+                msg.data.interval = interval_row;
+                xQueueSend(s_log_q, &msg, 0);
             }
 
             bool recording = s_activity_recording;
+            s_interval_prev_recording = s_activity_recording;
 
             // UI Update
             // 1) Time only @ 10Hz

@@ -44,7 +44,6 @@ idf_component_register(
         qmi8658
         stroke_detection
         sd_mmc_helper
-        ble
         rtc_pcf85063
         pwr_key
         battery_drv

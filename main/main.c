@@ -9,7 +9,6 @@
 
 #include "activity.h"
 #include "activity_log.h"
-#include "ble.h"
 #include "gps_gtu8.h"
 #include "nvs_helper.h"
 #include "rtc_pcf85063.h"
@@ -65,10 +64,6 @@ void app_main(void)
     };
     data_page_set_metrics(metrics, 3);
 
-    ESP_ERROR_CHECK(ble_app_init());
-    ble_set_device_name("ESP32S3-BLE"); // optional custom name
-    ble_start_advertising();
-
     esp_err_t sd_err = sd_mmc_helper_mount(&s_sd, "/sdcard");
     if (sd_err != ESP_OK)
     {
@@ -98,7 +93,7 @@ void app_main(void)
     s_act_q = xQueueCreate(4, sizeof(act_cmd_t));
     assert(s_act_q);
 
-    s_log_q = xQueueCreate(LOG_QUEUE_LEN, sizeof(activity_log_row_t));
+    s_log_q = xQueueCreate(LOG_QUEUE_LEN, sizeof(activity_log_msg_t));
     assert(s_log_q);
 
     xTaskCreate(activity_logger_task, "activity_logger", 6144, NULL, 6, NULL);

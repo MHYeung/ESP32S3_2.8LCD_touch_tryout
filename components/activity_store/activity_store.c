@@ -82,6 +82,16 @@ static bool parse_hms_ms(const char *s, float *out_s) {
     return true;
 }
 
+static void build_interval_label(char *out, size_t out_len, uint32_t round_idx, const char *phase)
+{
+    if (!out || out_len == 0)
+        return;
+    char tag = 'W';
+    if (phase && (phase[0] == 'R' || phase[0] == 'r'))
+        tag = 'R';
+    snprintf(out, out_len, "%lu%c", (unsigned long)round_idx, tag);
+}
+
 void activity_store_format_dist(char *out, size_t out_len, float meters) {
     if (!out || out_len == 0) return;
     if (meters < 0.1f) {
@@ -257,11 +267,13 @@ esp_err_t activity_store_load_splits_page(const char *in_path_or_base,
 
     char line[256];
     bool in_data = false;
+    bool interval_data = false;
 
     size_t stored = 0;
     size_t seen = 0;
     float total_time_s = 0.0f;
     float last_total_dist = 0.0f;
+    float cumulative_dist = 0.0f;
 
     const bool fast_page_only = (out_total_count == NULL && out_summary == NULL);
 
@@ -274,6 +286,15 @@ esp_err_t activity_store_load_splits_page(const char *in_path_or_base,
             // Find the column header row. Everything before is metadata.
             if (strncmp(p, "Split #", 7) == 0) {
                 in_data = true;
+                interval_data = false;
+                if (out_summary) out_summary->is_interval = false;
+                continue;
+            }
+            if (strncmp(p, "Round,Phase", 11) == 0 || strncmp(p, "Round, Phase", 12) == 0) {
+                in_data = true;
+                interval_data = true;
+                if (out_summary) out_summary->is_interval = true;
+                continue;
             }
             // Optional metadata parsing (safe to ignore if you don't need it)
             // e.g. "Split Setting,500 meters"
@@ -281,6 +302,12 @@ esp_err_t activity_store_load_splits_page(const char *in_path_or_base,
                 // parse first float found in the string
                 float v = 0.0f;
                 if (sscanf(p, "Split Setting,%f", &v) == 1) out_summary->split_setting_m = v;
+            }
+            if (out_summary && strncmp(p, "Activity Type,", 14) == 0) {
+                const char *t = p + 14;
+                t = skip_ws(t);
+                if (t && (strstr(t, "Interval") || strstr(t, "Intervals")))
+                    out_summary->is_interval = true;
             }
             if (out_summary && strncmp(p, "Activity ID,", 12) == 0) {
                 unsigned long id = 0;
@@ -291,28 +318,68 @@ esp_err_t activity_store_load_splits_page(const char *in_path_or_base,
 
         // Data rows:
         // Split #,Total Dist (m),Split Dist (m),Split Time,Avg Pace (/500m),Avg SPM
-        unsigned long idx = 0;
-        double total_d = 0, split_d = 0, spm = 0;
-        char tstr[20] = {0};
-        char pstr[16] = {0};
-
-        int n = sscanf(p, "%lu,%lf,%lf,%19[^,],%15[^,],%lf",
-                       &idx, &total_d, &split_d, tstr, pstr, &spm);
-        if (n < 5) continue;
-
+        // Round,Phase,Target,Unit,Phase Time,Phase Dist (m),Phase Pace (/500m),Avg SPM
         activity_store_split_t row = {0};
-        row.split_index = (uint32_t)idx;
-        row.total_dist_m = (float)total_d;
-        row.split_dist_m = (float)split_d;
-        strncpy(row.split_time_str, tstr, sizeof(row.split_time_str) - 1);
-        strncpy(row.pace_str, pstr, sizeof(row.pace_str) - 1);
-        row.avg_spm = (n >= 6) ? (float)spm : 0.0f;
+        if (!interval_data)
+        {
+            unsigned long idx = 0;
+            double total_d = 0, split_d = 0, spm = 0;
+            char tstr[20] = {0};
+            char pstr[16] = {0};
 
-        float dt = 0.0f;
-        if (parse_hms_ms(row.split_time_str, &dt)) {
-            total_time_s += dt;
+            int n = sscanf(p, "%lu,%lf,%lf,%19[^,],%15[^,],%lf",
+                           &idx, &total_d, &split_d, tstr, pstr, &spm);
+            if (n < 5) continue;
+
+            row.split_index = (uint32_t)idx;
+            row.total_dist_m = (float)total_d;
+            row.split_dist_m = (float)split_d;
+            strncpy(row.split_time_str, tstr, sizeof(row.split_time_str) - 1);
+            strncpy(row.pace_str, pstr, sizeof(row.pace_str) - 1);
+            row.avg_spm = (n >= 6) ? (float)spm : 0.0f;
+            row.is_interval = false;
+            snprintf(row.label, sizeof(row.label), "%lu", (unsigned long)row.split_index);
+
+            float dt = 0.0f;
+            if (parse_hms_ms(row.split_time_str, &dt)) {
+                total_time_s += dt;
+            }
+            last_total_dist = row.total_dist_m;
         }
-        last_total_dist = row.total_dist_m;
+        else
+        {
+            unsigned long round_idx = 0;
+            unsigned long target = 0;
+            double phase_d = 0.0;
+            double spm = 0.0;
+            char phase[6] = {0};
+            char unit[8] = {0};
+            char tstr[20] = {0};
+            char pstr[16] = {0};
+
+            int n = sscanf(p, "%lu,%5[^,],%lu,%7[^,],%19[^,],%lf,%15[^,],%lf",
+                           &round_idx, phase, &target, unit, tstr, &phase_d, pstr, &spm);
+            if (n < 6) continue;
+
+            row.split_index = (uint32_t)round_idx;
+            row.split_dist_m = (float)phase_d;
+            cumulative_dist += row.split_dist_m;
+            row.total_dist_m = cumulative_dist;
+            strncpy(row.split_time_str, tstr, sizeof(row.split_time_str) - 1);
+            strncpy(row.pace_str, pstr, sizeof(row.pace_str) - 1);
+            row.avg_spm = (n >= 8) ? (float)spm : 0.0f;
+            row.is_interval = true;
+            strncpy(row.phase, phase, sizeof(row.phase) - 1);
+            row.target_value = (uint32_t)target;
+            strncpy(row.target_unit, unit, sizeof(row.target_unit) - 1);
+            build_interval_label(row.label, sizeof(row.label), row.split_index, row.phase);
+
+            float dt = 0.0f;
+            if (parse_hms_ms(row.split_time_str, &dt)) {
+                total_time_s += dt;
+            }
+            last_total_dist = row.total_dist_m;
+        }
 
         if (seen >= start_index && out_rows && stored < max_rows) {
             out_rows[stored++] = row;

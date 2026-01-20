@@ -42,6 +42,7 @@ typedef struct
     bool has_next;
     bool ok;
     bool retry_prev;
+    bool interval_activity;
     activity_store_split_t rows[PAGE_ROWS + 1];
 } detail_load_result_t;
 
@@ -68,6 +69,17 @@ static void request_load(void);
 #define SPLIT_COLS 4
 static const lv_coord_t s_col_w[SPLIT_COLS] = {24, 60, 74, 74}; // tweak to taste
 static const char *s_col_hdr[SPLIT_COLS] = {"#", "Dist", "Time", "Pace"};
+static const char *s_col_hdr_interval[SPLIT_COLS] = {"Rd", "Dist", "Time", "Pace"};
+
+static void set_header_labels(bool interval_mode)
+{
+    const char *const *hdr = interval_mode ? s_col_hdr_interval : s_col_hdr;
+    for (int c = 0; c < SPLIT_COLS; c++)
+    {
+        if (s_hdr_lbl[c])
+            lv_label_set_text(s_hdr_lbl[c], hdr[c]);
+    }
+}
 
 static void format_activity_title(char *out, size_t n)
 {
@@ -242,7 +254,8 @@ static void apply_loaded_rows(const activity_store_split_t *rows,
                               bool has_next,
                               bool ok,
                               bool total_known,
-                              size_t total_rows)
+                              size_t total_rows,
+                              bool interval_activity)
 {
     if (!s_tbl || !s_scroller)
         return;
@@ -260,13 +273,25 @@ static void apply_loaded_rows(const activity_store_split_t *rows,
     s_has_next = has_next;
     s_page_row_count = ok ? count : 0;
 
+    bool interval_mode = interval_activity;
+    if (count > 0)
+        interval_mode = rows[0].is_interval;
+    set_header_labels(interval_mode);
+
     if (!ok || count == 0)
     {
-        uint32_t s_current_m = nvs_helper_get_split_len();
         lv_table_set_row_cnt(s_tbl, 0);
-        char hint_msg[64];
-        snprintf(hint_msg, sizeof(hint_msg), "No splits yet.\nRow past %um to create splits.", (unsigned int)s_current_m);
-        show_hint(hint_msg);
+        if (interval_mode)
+        {
+            show_hint("No intervals yet.\nComplete a work/rest phase to log.");
+        }
+        else
+        {
+            uint32_t s_current_m = nvs_helper_get_split_len();
+            char hint_msg[64];
+            snprintf(hint_msg, sizeof(hint_msg), "No splits yet.\nRow past %um to create splits.", (unsigned int)s_current_m);
+            show_hint(hint_msg);
+        }
         update_nav_controls();
         return;
     }
@@ -282,8 +307,11 @@ static void apply_loaded_rows(const activity_store_split_t *rows,
 
     for (size_t i = 0; i < count; i++)
     {
-        char c0[8], c1[16], c2[16];
-        snprintf(c0, sizeof(c0), "%lu", (unsigned long)rows[i].split_index);
+        char c0[12], c1[16], c2[16];
+        if (rows[i].is_interval && rows[i].label[0])
+            snprintf(c0, sizeof(c0), "%s", rows[i].label);
+        else
+            snprintf(c0, sizeof(c0), "%lu", (unsigned long)rows[i].split_index);
         activity_store_format_dist(c1, sizeof(c1), rows[i].split_dist_m);
         format_split_time(c2, sizeof(c2), rows[i].split_time_str);
 
@@ -330,7 +358,8 @@ static void apply_load_result_async(void *p)
                       res->has_next,
                       res->ok,
                       res->total_known,
-                      res->total_rows);
+                      res->total_rows,
+                      res->interval_activity);
     free(res);
 }
 
@@ -358,13 +387,14 @@ static void detail_load_task(void *arg)
         {
             size_t count = 0;
             size_t total = 0;
+            activity_store_summary_t summary = {0};
             esp_err_t r = activity_store_load_splits_page(req.base_full,
                                                           req.page_index * PAGE_ROWS,
                                                           res->rows,
                                                           PAGE_ROWS + 1,
                                                           &count,
                                                           req.want_total ? &total : NULL,
-                                                          NULL);
+                                                          &summary);
 
             if (r == ESP_OK && count == 0 && req.page_index > 0)
                 res->retry_prev = true;
@@ -382,6 +412,7 @@ static void detail_load_task(void *arg)
                 res->total_known = true;
                 res->total_rows = total;
             }
+            res->interval_activity = summary.is_interval;
         }
 
         lv_async_call(apply_load_result_async, res);
@@ -430,6 +461,7 @@ static void refresh_detail(void)
     size_t count = 0;
     esp_err_t r = ESP_FAIL;
     bool has_next = false;
+    activity_store_summary_t summary = {0};
 
     for (int attempt = 0; attempt < 2; attempt++)
     {
@@ -439,7 +471,7 @@ static void refresh_detail(void)
                                             PAGE_ROWS + 1,
                                             &count,
                                             NULL,
-                                            NULL);
+                                            &summary);
 
         if (r == ESP_OK && count == 0 && s_page_index > 0)
         {
@@ -460,7 +492,8 @@ static void refresh_detail(void)
                       has_next,
                       (r == ESP_OK && count > 0),
                       false,
-                      0);
+                      0,
+                      summary.is_interval);
 }
 
 static void request_load(void)

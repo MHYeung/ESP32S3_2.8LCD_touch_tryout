@@ -9,9 +9,38 @@
 #include "ui_data_page.h"
 #include "ui_interval_data_page.h"
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 static const char *TAG = "app";
+
+static const char *interval_unit_to_str(interval_unit_t unit)
+{
+    switch (unit)
+    {
+    case INTERVAL_UNIT_TIME:
+        return "s";
+    case INTERVAL_UNIT_DISTANCE:
+        return "m";
+    case INTERVAL_UNIT_STROKES:
+        return "st";
+    default:
+        return "";
+    }
+}
+
+static void fill_interval_log_cfg(activity_log_interval_cfg_t *out, const interval_config_t *cfg)
+{
+    if (!out || !cfg)
+        return;
+    memset(out, 0, sizeof(*out));
+    out->work_value = cfg->work.value;
+    strncpy(out->work_unit, interval_unit_to_str(cfg->work.unit), sizeof(out->work_unit) - 1);
+    out->rest_value = cfg->rest.value;
+    strncpy(out->rest_unit, interval_unit_to_str(cfg->rest.unit), sizeof(out->rest_unit) - 1);
+    out->rounds = cfg->rounds;
+    out->auto_advance = cfg->auto_advance;
+}
 
 void activity_worker_task(void *arg)
 {
@@ -48,6 +77,7 @@ void activity_worker_task(void *arg)
             activity_start(&s_activity, time(NULL));
             s_activity.activity_type = ACTIVITY_NORMAL;
 
+            activity_log_set_interval_config(&s_act_log, NULL);
             activity_log_set_split_interval(&s_act_log, s_current_split_m);
 
             if (s_sd.mounted)
@@ -81,6 +111,12 @@ void activity_worker_task(void *arg)
             s_activity.activity_type = ACTIVITY_INTERVAL_NORMAL;
             resolve_interval_split_m();
             activity_log_set_split_interval(&s_act_log, s_current_split_m);
+
+            interval_config_t cfg = {0};
+            interval_program_get_config(&cfg);
+            activity_log_interval_cfg_t log_cfg = {0};
+            fill_interval_log_cfg(&log_cfg, &cfg);
+            activity_log_set_interval_config(&s_act_log, &log_cfg);
 
             if (s_sd.mounted)
             {
@@ -116,6 +152,40 @@ void activity_worker_task(void *arg)
 
             data_page_show_activity_toast(false);
             ESP_LOGI("ACT", "STOP id=%lu Dist=%.1fm", (unsigned long)snapshot.id, (double)snapshot.distance_m);
+
+            float final_time_s = snapshot.duration_ms / 1000.0f;
+            if (s_act_log.opened)
+            {
+                bool need_final_row = !s_act_log.has_last_row ||
+                                      (snapshot.distance_m - s_act_log.last_row_distance_m) >= 0.1f ||
+                                      (final_time_s - s_act_log.last_row_time_s) >= 0.1f;
+
+                if (need_final_row)
+                {
+                    activity_log_row_t final_row = {0};
+                    float avg_pace_s = (snapshot.avg_speed_mps > 0.1f) ? (500.0f / snapshot.avg_speed_mps) : 0.0f;
+
+                    final_row.rtc_time = snapshot.end_ts;
+                    final_row.session_time_s = final_time_s;
+                    final_row.total_distance_m = snapshot.distance_m;
+                    final_row.pace_500m_s = avg_pace_s;
+                    final_row.spm_instant = snapshot.avg_spm;
+                    final_row.avg_pace_500m_s = avg_pace_s;
+                    final_row.avg_speed_mps = snapshot.avg_speed_mps;
+                    final_row.stroke_length_m = 0.0f;
+                    final_row.stroke_count = snapshot.stroke_count;
+                    final_row.gps_lat = 0.0;
+                    final_row.gps_lon = 0.0;
+                    final_row.power_w = 0.0f;
+                    final_row.drive_time_s = 0.0f;
+                    final_row.recovery_time_s = 0.0f;
+                    final_row.recovery_ratio = 0.0f;
+
+                    activity_log_append(&s_act_log, &final_row);
+                }
+
+                activity_log_finalize(&s_act_log, snapshot.distance_m, final_time_s, snapshot.avg_spm);
+            }
 
             // STOP THE LOGGER: This flushes and closes the CSV file.
             // The file is now complete and saved on the SD card.
@@ -160,15 +230,22 @@ void activity_logger_task(void *arg)
 {
     (void)arg;
 
-    activity_log_row_t row;
+    activity_log_msg_t msg;
     for (;;)
     {
-        if (xQueueReceive(s_log_q, &row, portMAX_DELAY) == pdTRUE)
+        if (xQueueReceive(s_log_q, &msg, portMAX_DELAY) == pdTRUE)
         {
             // Only append if file is open
             if (s_act_log.opened)
             {
-                activity_log_append(&s_act_log, &row);
+                if (msg.kind == ACT_LOG_ROW_STROKE)
+                {
+                    activity_log_append(&s_act_log, &msg.data.stroke);
+                }
+                else if (msg.kind == ACT_LOG_ROW_INTERVAL)
+                {
+                    activity_log_append_interval(&s_act_log, &msg.data.interval);
+                }
             }
         }
     }

@@ -76,6 +76,73 @@ static void format_pace(float seconds, char *buf, size_t len)
     snprintf(buf, len, "%02d:%04.1f", min, sec_rem);
 }
 
+static void activity_log_update_splits(activity_log_t *log,
+                                       float total_distance_m,
+                                       float session_time_s,
+                                       float spm_value,
+                                       bool include_partial)
+{
+    if (!log || !log->opened || !log->f_splits)
+        return;
+    if (log->split_interval_m <= 0.0f)
+        return;
+    if (total_distance_m < log->last_split_dist_m || session_time_s < log->last_split_time_s)
+        return;
+
+    float dist_delta = total_distance_m - log->last_split_dist_m;
+    float time_delta = session_time_s - log->last_split_time_s;
+
+    while (dist_delta >= log->split_interval_m && log->split_interval_m > 0.0f)
+    {
+        float ratio = (dist_delta > 0.0f) ? (log->split_interval_m / dist_delta) : 0.0f;
+        float exact_split_time = time_delta * ratio;
+        float split_total_dist = log->last_split_dist_m + log->split_interval_m;
+        float split_pace_s = (log->split_interval_m > 0.1f)
+                                 ? (exact_split_time / (log->split_interval_m / 500.0f))
+                                 : 0.0f;
+
+        activity_log_split_row_t split = {
+            .split_index = log->next_split_index++,
+            .total_dist_m = split_total_dist,
+            .split_dist_m = log->split_interval_m,
+            .split_time_s = exact_split_time,
+            .split_pace_s = split_pace_s,
+            .avg_spm = spm_value};
+
+        activity_log_append_split(log, &split);
+
+        log->last_split_dist_m = split_total_dist;
+        log->last_split_time_s += exact_split_time;
+
+        dist_delta = total_distance_m - log->last_split_dist_m;
+        time_delta = session_time_s - log->last_split_time_s;
+    }
+
+    if (include_partial)
+    {
+        const float min_partial_m = 0.1f;
+        if (dist_delta >= min_partial_m && time_delta >= 0.0f)
+        {
+            float split_pace_s = (dist_delta > 0.1f)
+                                     ? (time_delta / (dist_delta / 500.0f))
+                                     : 0.0f;
+
+            activity_log_split_row_t split = {
+                .split_index = log->next_split_index++,
+                .total_dist_m = total_distance_m,
+                .split_dist_m = dist_delta,
+                .split_time_s = time_delta,
+                .split_pace_s = split_pace_s,
+                .avg_spm = spm_value};
+
+            activity_log_append_split(log, &split);
+
+            log->last_split_dist_m = total_distance_m;
+            log->last_split_time_s = session_time_s;
+        }
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /* File / Dir Helpers                                                        */
 /* -------------------------------------------------------------------------- */
@@ -125,10 +192,15 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
         return ESP_ERR_INVALID_STATE;
 
     float cached_interval = log->split_interval_m;
+    activity_log_interval_cfg_t cached_interval_cfg = log->interval_cfg;
+    bool cached_interval_cfg_valid = log->interval_cfg_valid;
+    bool is_interval = activity_type_is_interval(act_type);
 
     activity_log_init(log);
 
     log->split_interval_m = (cached_interval > 0.1f) ? cached_interval : 1000.0f;
+    log->interval_cfg = cached_interval_cfg;
+    log->interval_cfg_valid = cached_interval_cfg_valid;
     log->next_split_index = 1;
     log->activity_type = act_type;
 
@@ -191,15 +263,39 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
         // 2. Write Metadata Rows (Device Settings)
         fprintf(log->f_splits, "Device Info,ESP32S3-BLE Rowing Speed Coach\n");
         fprintf(log->f_splits, "Session Start,%s\n", time_str);
-        fprintf(log->f_splits, "Activity Type, %s\n",  get_activity_string_fast(log->activity_type));
-        fprintf(log->f_splits, "Split Setting,%.0f meters\n", log->split_interval_m); //
+        fprintf(log->f_splits, "Activity Type,%s\n",  get_activity_string_fast(log->activity_type));
+        if (is_interval)
+        {
+            if (log->interval_cfg_valid)
+            {
+                fprintf(log->f_splits, "Interval Work,%u %s\n",
+                        (unsigned)log->interval_cfg.work_value,
+                        log->interval_cfg.work_unit);
+                fprintf(log->f_splits, "Interval Rest,%u %s\n",
+                        (unsigned)log->interval_cfg.rest_value,
+                        log->interval_cfg.rest_unit);
+                fprintf(log->f_splits, "Rounds,%u\n", (unsigned)log->interval_cfg.rounds);
+                fprintf(log->f_splits, "Auto Advance,%u\n", log->interval_cfg.auto_advance ? 1U : 0U);
+            }
+        }
+        else
+        {
+            fprintf(log->f_splits, "Split Setting,%.0f meters\n", log->split_interval_m);
+        }
         fprintf(log->f_splits, "Activity ID,%u\n", (unsigned int)activity_id);
 
         // 3. Add an empty row for separation (optional but readable)
         fprintf(log->f_splits, "\n");
 
         // 4. Write the Actual Data Columns
-        fprintf(log->f_splits, "Split #,Total Dist (m),Split Dist (m),Split Time,Avg Pace (/500m),Avg SPM\n");
+        if (is_interval)
+        {
+            fprintf(log->f_splits, "Round,Phase,Target,Unit,Phase Time,Phase Dist (m),Phase Pace (/500m),Avg SPM\n");
+        }
+        else
+        {
+            fprintf(log->f_splits, "Split #,Total Dist (m),Split Dist (m),Split Time,Avg Pace (/500m),Avg SPM\n");
+        }
     }
 
     log->opened = true;
@@ -236,40 +332,18 @@ esp_err_t activity_log_append(activity_log_t *log, const activity_log_row_t *row
         log->pending = 0;
     }
 
-    // --- 2. Check for Split ---
-    // If enabled (>0) and we crossed the threshold relative to last split
-    if (log->split_interval_m > 0)
+    log->has_last_row = true;
+    log->last_row_distance_m = row->total_distance_m;
+    log->last_row_time_s = row->session_time_s;
+    log->last_row_stroke_count = row->stroke_count;
+
+    if (!activity_type_is_interval(log->activity_type))
     {
-        float dist_delta = row->total_distance_m - log->last_split_dist_m;
-
-        if (dist_delta >= log->split_interval_m)
-        {
-            float time_delta = row->session_time_s - log->last_split_time_s;
-
-            // --- FIX: INTERPOLATION FOR EXACT SPLIT ---
-            // 1. Calculate the ratio of "Excess" (e.g. 100m / 102m = 0.98)
-            float ratio = log->split_interval_m / dist_delta;
-
-            // 2. Calculate Exact Time for 100m
-            float exact_split_time = time_delta * ratio;
-
-            // 3. Log the EXACT Interval (e.g. 100m)
-            activity_log_split_row_t split = {
-                .split_index = log->next_split_index++,
-                .total_dist_m = row->total_distance_m, // Keep Total honest (e.g. 302m)
-                .split_dist_m = log->split_interval_m, // Force "100" in the column
-                .split_time_s = exact_split_time,      // Adjusted time
-                .split_pace_s = exact_split_time / (log->split_interval_m / 500.0f),
-                .avg_spm = row->spm_instant};
-
-            activity_log_append_split(log, &split);
-
-            // 4. Reset state effectively
-            // We move the "last marker" forward by exactly 100m (not 102m)
-            // This ensures the NEXT split starts counting from 100m, 200m, etc.
-            log->last_split_dist_m += log->split_interval_m;
-            log->last_split_time_s += exact_split_time;
-        }
+        activity_log_update_splits(log,
+                                   row->total_distance_m,
+                                   row->session_time_s,
+                                   row->spm_instant,
+                                   false);
     }
 
     return ESP_OK;
@@ -295,6 +369,59 @@ esp_err_t activity_log_append_split(activity_log_t *log, const activity_log_spli
             (double)row->avg_spm);
 
     fflush(log->f_splits);
+    return ESP_OK;
+}
+
+void activity_log_set_interval_config(activity_log_t *log, const activity_log_interval_cfg_t *cfg)
+{
+    if (!log)
+        return;
+    if (!cfg)
+    {
+        log->interval_cfg_valid = false;
+        memset(&log->interval_cfg, 0, sizeof(log->interval_cfg));
+        return;
+    }
+    log->interval_cfg = *cfg;
+    log->interval_cfg_valid = true;
+}
+
+esp_err_t activity_log_append_interval(activity_log_t *log, const activity_log_interval_row_t *row)
+{
+    if (!log || !log->opened || !log->f_splits)
+        return ESP_ERR_INVALID_STATE;
+    if (!row)
+        return ESP_ERR_INVALID_ARG;
+
+    char phase_time_str[32];
+    fmt_session_time_ms(row->phase_time_s, phase_time_str, sizeof(phase_time_str));
+
+    char pace_str[24];
+    format_pace(row->phase_pace_s, pace_str, sizeof(pace_str));
+
+    fprintf(log->f_splits, "%u,%s,%u,%s,%s,%.1f,%s,%.1f\n",
+            (unsigned)row->round_index,
+            (row->phase[0] != 0) ? row->phase : "--",
+            (unsigned)row->target_value,
+            (row->target_unit[0] != 0) ? row->target_unit : "--",
+            phase_time_str,
+            (double)row->phase_distance_m,
+            pace_str,
+            (double)row->avg_spm);
+
+    fflush(log->f_splits);
+    return ESP_OK;
+}
+
+esp_err_t activity_log_finalize(activity_log_t *log, float final_distance_m, float final_time_s, float avg_spm)
+{
+    if (!log || !log->opened)
+        return ESP_ERR_INVALID_STATE;
+
+    if (!activity_type_is_interval(log->activity_type))
+    {
+        activity_log_update_splits(log, final_distance_m, final_time_s, avg_spm, true);
+    }
     return ESP_OK;
 }
 
