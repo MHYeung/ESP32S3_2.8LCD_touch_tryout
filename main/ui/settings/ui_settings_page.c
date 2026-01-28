@@ -139,15 +139,14 @@ static void update_datetime_label_text(void)
         if (PCF85063_read_time(&rtc) == ESP_OK)
         {
             char buf[32];
-            snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u",
-                     (unsigned)rtc.year, (unsigned)rtc.month, (unsigned)rtc.day,
-                     (unsigned)rtc.hour, (unsigned)rtc.minute);
+            snprintf(buf, sizeof(buf), "%04u-%02u-%02u",
+                     (unsigned)rtc.year, (unsigned)rtc.month, (unsigned)rtc.day);
             lv_label_set_text(s_datetime_lbl, buf);
             return;
         }
     }
 
-    lv_label_set_text(s_datetime_lbl, "---- -- -- --:--");
+    lv_label_set_text(s_datetime_lbl, "---- -- --");
 }
 
 static void datetime_timer_cb(lv_timer_t *t)
@@ -351,6 +350,16 @@ void settings_page_create(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_body, 0, 0);
     lv_obj_add_flag(s_body, LV_OBJ_FLAG_SCROLLABLE);
 
+    // Date (read-only, shown at top)
+    s_datetime_lbl = create_value_row(s_body, "Date", "");
+    update_datetime_label_text();
+    if (s_datetime_timer)
+    {
+        lv_timer_del(s_datetime_timer);
+        s_datetime_timer = NULL;
+    }
+    s_datetime_timer = lv_timer_create(datetime_timer_cb, 60000, NULL);
+
     // Dark Mode Switch (Pass 'is_dark')
     s_dark_mode_sw = create_settings_row(s_body, "Dark Mode", sw_dark_mode_event_cb, is_dark);
 
@@ -361,15 +370,6 @@ void settings_page_create(lv_obj_t *parent)
     s_split_val_lbl = create_clickable_row(s_body, "Split Length", split_row_click_cb);
     update_split_label_text();
 
-    // Date/Time (read-only)
-    s_datetime_lbl = create_value_row(s_body, "Date/Time", "");
-    update_datetime_label_text();
-    if (s_datetime_timer)
-    {
-        lv_timer_del(s_datetime_timer);
-        s_datetime_timer = NULL;
-    }
-    s_datetime_timer = lv_timer_create(datetime_timer_cb, 1000, NULL);
 }
 
 void ui_settings_register_split_length_cb(ui_split_length_cb_t cb) { s_split_cb = cb; }
