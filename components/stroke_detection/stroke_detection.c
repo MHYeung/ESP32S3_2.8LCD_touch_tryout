@@ -199,9 +199,12 @@ stroke_event_t stroke_detection_update(stroke_detection_t *sd_,
 
     if (sd->phase == 0) { // RECOVERY STATE -> Looking for Catch
         
-        // Trigger: Signal rises above threshold AND slope is positive
-        if (s0 > thr && (s0 - sd->prev_a_f * sd->polarity) > 0) {
-            
+        // Debounce: ignore CATCH if too soon after last catch (prevents double-count in pocket)
+        float min_interval = (sd->cfg.min_catch_interval_s > 0.0f) ? sd->cfg.min_catch_interval_s : 0.5f;
+        if (sd->t_last_catch > 0.0f && (t_s - sd->t_last_catch) < min_interval) {
+            /* skip this candidate */
+        } else if (s0 > thr && (s0 - sd->prev_a_f * sd->polarity) > 0) {
+            // Trigger: Signal rises above threshold AND slope is positive
             // --- CATCH DETECTED ---
             sd->phase = 1; 
             float t_now = t_s;
@@ -240,8 +243,8 @@ stroke_event_t stroke_detection_update(stroke_detection_t *sd_,
         if (s0 > sd->peak_norm) sd->peak_norm = s0;
 
         // Trigger: Signal drops below % of peak OR below absolute floor
-        // Hull finish is less sharp than oar finish, so we use a lower % or 0-crossing
-        float finish_thr = fmaxf(sd->peak_norm * 0.25f, sd->cfg.thr_floor * 0.5f);
+        // Hull finish is less sharp than oar finish; 0.35 reduces quick recovery->catch cycles from noise
+        float finish_thr = fmaxf(sd->peak_norm * 0.35f, sd->cfg.thr_floor * 0.5f);
 
         if (s0 < finish_thr) {
             

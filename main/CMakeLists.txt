@@ -3,6 +3,7 @@ idf_component_register(
         "main.c"
         "app/app_activity.c"
         "app/app_context.c"
+        "app/app_usb_msc.c"
         "app/app_display.c"
         "app/app_imu.c"
         "app/app_power.c"
@@ -11,7 +12,7 @@ idf_component_register(
         "ui/core/ui_core.c"
         "ui/core/ui_core_state.c"
         "ui/core/ui_dialogs.c"
-        "ui//core/ui_gestures.c"
+        "ui/core/ui_gestures.c"
         "ui/core/ui_layout.c"
         "ui/core/ui_pages.c"
         "ui/settings/ui_settings_page.c"
@@ -50,6 +51,8 @@ idf_component_register(
         activity
         activity_log
         activity_store
+        storage_paths
         gps_gtu8
         nvs_helper
+        esp_tinyusb
 )

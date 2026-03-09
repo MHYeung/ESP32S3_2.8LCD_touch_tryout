@@ -22,5 +22,6 @@
     "-d2",
     "-f", "board/esp32s3-builtin.cfg",
     "-c", "adapter speed 10000"
-  ]
+  ],
+  "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.5.1/"
 }

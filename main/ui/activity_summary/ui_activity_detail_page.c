@@ -13,7 +13,7 @@
 
 static const char *TAG = "ui_act_detail";
 
-#define SD_MOUNT "/sdcard"
+#include "storage_paths.h"
 #define PAGE_ROWS 10
 
 static uint32_t s_act_id = 0;

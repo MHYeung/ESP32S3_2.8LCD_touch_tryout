@@ -169,15 +169,14 @@ void stroke_task(void *arg)
         .lpf_hz = 3.0f, // Was 1.2f. Raised slightly to capture the sharp "catch" impact, but still filter vibration.
 
         // TIMING:
-        .min_stroke_period_s = 0.8f, // 60 SPM max (Rowing is usually < 40)
+        .min_stroke_period_s = 0.9f, // ~66 SPM max; avoids counting very fast double-events
         .max_stroke_period_s = 6.0f, // 10 SPM min
+        .min_catch_interval_s = 0.55f, // Debounce: min time between catches (fixes double SPM in pocket)
 
-        // THRESHOLDS:
-        // These now apply to Acceleration (m/s^2), not Gyro (rad/s).
-        // 1.3x multiplier above noise floor.
-        // 0.35 m/s^2 floor (approx 0.035g) avoids triggering on small waves.
-        .thr_k = 1.3f, // Was STROKE_THR_K_DEFAULT (1.0)
-        .thr_floor = 0.35f,
+        // THRESHOLDS (less sensitive for pocket/noisy mounting):
+        // Higher thr_floor and thr_k reduce false triggers from jitter.
+        .thr_k = 1.6f,
+        .thr_floor = 0.55f, // ~0.056g; was 0.35 - raises bar for pocket motion
     };
 
     stroke_detection_init(&s_stroke, &cfg);

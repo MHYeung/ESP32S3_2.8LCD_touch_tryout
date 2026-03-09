@@ -12,10 +12,7 @@
 
 static const char *TAG = "ui_act_sum";
 
-#ifndef ACTIVITY_DIR
-#define ACTIVITY_DIR "/sdcard/activities"
-#endif
-#define ACTIVITY_INDEX_PATH ACTIVITY_DIR "/index.csv"
+#include "storage_paths.h"
 
 typedef struct
 {

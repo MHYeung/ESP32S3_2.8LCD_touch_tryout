@@ -4,11 +4,11 @@ Create and provide links to API pages in LVGL doc build.
 
 Uses doxygen_xml.py module to:
 
-- Prep and run Doxygen
+- Prep and run Doxygen,
 - make Doxygen XML output available, and
 - make Doxygen-documented symbols from the C code available.
 
-Because these 3 files are acceptable in a C project:
+Because these 5 files are acceptable in a C project:
 
 1.  ./path/to/one/aaa.c
 2.  ./path/to/one/aaa.h
@@ -21,19 +21,19 @@ we see that:
 - duplicate filename stems ('aaa' above) are acceptable, and
 - they must not only be differentiated by their extensions, but also by their path.
 
-On the other hand, Sphinx link reference names for :ref:`link_ref_name` link
-references must be unique throughout a document project.  Since API pages are
+On the other hand, Sphinx link target names for :ref:`link_ref_name` link
+target names must be unique throughout a document project.  Since API pages are
 generated from C source files, to make this effective, they must include:
 
 A.  at least part of the path,
 B.  filename stem, and
 C.  extension
 
-in the link reference names.  Prior to 11-Aug-2025, link reference names were formed
+in the link target names.  Prior to 11-Aug-2025, link target names were formed
 using ONLY the filename stem.  This created a conflict when an example of #4 above
 appeared in the LVGL code, and caused a doc-build failure because the API-page link
-reference names to #2 and #4 were identical, and Sphinx (correctly) does not allow
-that.  So after 11-Aug-2025, these link reference names are now differentiated all 3
+target names to #2 and #4 were identical, and Sphinx (correctly) does not allow
+that.  So after 11-Aug-2025, these link target names are now differentiated via all 3
 of A, B and C above.
 
 .. note::
@@ -67,6 +67,10 @@ doxy_src_file_ext_list = [
     '.hpp',
     '.h++'
 ]
+
+# Excluded from doxygen via EXCLUDE config item.  (This config
+# item is set in `doxygen_xml.py`.)
+_cfg_exclude_list = ['lv_conf_internal.h']
 
 # Multi-line match ``API + newline + \*\*\* + whitespace``.
 # NB:  the ``\s*`` at the end forces the regex to match the whitespace
@@ -342,7 +346,7 @@ def _process_end_of_eligible_doc(b: str, rst_file: str) -> (str, str, int):
     links_added_count = len(genned_link_set)
 
     if links_added_count > 0:
-        c = _auto_gen_sep + '\n\n'
+        c = '\n' + _auto_gen_sep + '\n\n'
         for link_name in sorted(genned_link_set, key=_hyperlink_sort_value):
             c += ':ref:`' + link_name + '`\n\n'
 
@@ -565,7 +569,7 @@ def _add_hyperlinks_to_eligible_files(intermediate_dir: str,
 
                 if html_includes:
                     # Convert `html_includes` set to a list of strings containing the
-                    # Sphinx hyperlink syntax "link references".  Example from above:
+                    # Sphinx hyperlink syntax "link target names".  Example from above:
                     # [':ref:`lv_draw_line_h`\n',
                     #  ':ref:`lv_draw_sdl_h`\n',
                     #  ':ref:`lv_draw_sw_blend_to_i1_h`\n',
@@ -576,7 +580,7 @@ def _add_hyperlinks_to_eligible_files(intermediate_dir: str,
                     )
 
                     # Convert that list to a single string of Sphinx hyperlink
-                    # references with blank lines between them.
+                    # target names with blank lines between them.
                     # :ref:`lv_draw_line_h`
                     #
                     # :ref:`lv_draw_sdl_h`
@@ -794,7 +798,9 @@ def _recursively_create_api_rst_files(depth: int,
             # `ext` is converted to lower case so that any incidental case change
             # in the extension on Windows will not break this algorithm.
             if ext.lower() in doxy_src_file_ext_list:
-                eligible = (dir_item in doxygen_xml.files)
+                eligible = (dir_item in doxygen_xml.files
+                        and dir_item not in _cfg_exclude_list)
+
                 if eligible:
                     elig_h_files.append(path_bep)  # Add file to list.
                     elig_h_file_count += 1
@@ -818,7 +824,7 @@ def _recursively_create_api_rst_files(depth: int,
         elig_sub_dirs.sort()
         elig_h_files.sort()
 
-        # Create index.rst plus .RST files for any .H* file directly in in dir.
+        # Create index.rst plus .RST files for any .H* file directly in dir.
         _create_rst_files_for_dir(src_root_len,
                                   src_dir_bep,
                                   elig_h_files,

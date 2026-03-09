@@ -49,3 +49,15 @@ esp_err_t sd_mmc_helper_write_text(sd_mmc_helper_t *sd,
                                    const char *relative_path,
                                    const char *data,
                                    bool append);
+
+/**
+ * Init SD card for raw block access (e.g. TinyUSB MSC).
+ * Call when FAT is NOT mounted. Uses same pins as mount.
+ * Caller must free *out_card with sd_mmc_helper_deinit_sdmmc_raw() when done.
+ */
+esp_err_t sd_mmc_helper_init_sdmmc_raw(sdmmc_card_t **out_card);
+
+/**
+ * Deinit SD card from raw access. Frees the card.
+ */
+esp_err_t sd_mmc_helper_deinit_sdmmc_raw(sdmmc_card_t *card);

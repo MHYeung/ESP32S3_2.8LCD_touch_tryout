@@ -60,6 +60,8 @@ typedef struct {
     float min_stroke_period_s;   // e.g. 1.0s
     float max_stroke_period_s;   // e.g. 6.0s
 
+    float min_catch_interval_s;  // Min time between CATCH events (debounce, e.g. 0.5s)
+
     float thr_k;
     float thr_floor;
 } stroke_detection_cfg_t;

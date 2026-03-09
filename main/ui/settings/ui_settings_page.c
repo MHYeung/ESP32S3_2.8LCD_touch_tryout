@@ -6,6 +6,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include "app/app_usb_msc.h"
+#include "app/app_context.h"
 #include "nvs_helper.h"
 #include "rtc_pcf85063.h"
 #include "esp_err.h"
@@ -19,12 +21,13 @@ static lv_obj_t *s_root = NULL;
 static lv_obj_t *s_body = NULL;
 static ui_status_bar_t s_status = {0};
 static lv_obj_t *s_dark_mode_sw = NULL;
+static lv_obj_t *s_usb_drive_sw = NULL;
 static lv_obj_t *s_split_val_lbl = NULL;
 static lv_obj_t *s_datetime_lbl = NULL;
 static lv_timer_t *s_datetime_timer = NULL;
 
 // Default split is 1000m until changed
-static uint32_t s_current_split_m = 1000;
+//static uint32_t s_current_split_m = 1000;
 static ui_split_length_cb_t s_split_cb = NULL;
 
 /* Dialog Handles */
@@ -276,6 +279,48 @@ static void sw_dark_mode_event_cb(lv_event_t *e)
     nvs_helper_set_dark_mode(on); // <--- Add Save Call
 }
 
+static void usb_drive_row_click_cb(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+        return;
+
+    bool currently_on = app_usb_msc_is_active();
+    bool want_on = !currently_on;
+
+    if (want_on)
+    {
+        if (s_activity_recording)
+        {
+            ESP_LOGW("UI", "Cannot enable USB drive while recording");
+            return;
+        }
+        esp_err_t ret = app_usb_msc_enter();
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE("UI", "USB MSC enter failed: %s", esp_err_to_name(ret));
+            return;
+        }
+        ESP_LOGI("UI", "USB drive mode on - plug USB to computer");
+    }
+    else
+    {
+        esp_err_t ret = app_usb_msc_leave();
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE("UI", "USB MSC leave failed: %s", esp_err_to_name(ret));
+        }
+    }
+
+    /* Update switch to match current state */
+    if (s_usb_drive_sw)
+    {
+        if (app_usb_msc_is_active())
+            lv_obj_add_state(s_usb_drive_sw, LV_STATE_CHECKED);
+        else
+            lv_obj_clear_state(s_usb_drive_sw, LV_STATE_CHECKED);
+    }
+}
+
 static void sw_auto_rotate_event_cb(lv_event_t *e)
 {
     lv_obj_t *sw = lv_event_get_target_obj(e);
@@ -365,6 +410,31 @@ void settings_page_create(lv_obj_t *parent)
 
     // Auto Rotate Switch (Pass 'is_rot')
     create_settings_row(s_body, "Auto Rotate", sw_auto_rotate_event_cb, is_rot);
+
+    // USB Drive Mode - whole row clickable so tap anywhere toggles (avoids small switch hit area)
+    {
+        lv_obj_t *row = lv_obj_create(s_body);
+        lv_obj_set_width(row, lv_pct(100));
+        lv_obj_set_height(row, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_all(row, 8, 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        ui_theme_apply_surface(row);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(row, usb_drive_row_click_cb, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *lbl = lv_label_create(row);
+        lv_label_set_text(lbl, "Export via USB");
+        ui_theme_apply_label(lbl, false);
+        lv_obj_set_flex_grow(lbl, 1);
+
+        s_usb_drive_sw = lv_switch_create(row);
+        if (app_usb_msc_is_active())
+            lv_obj_add_state(s_usb_drive_sw, LV_STATE_CHECKED);
+        lv_obj_clear_flag(s_usb_drive_sw, LV_OBJ_FLAG_CLICKABLE); /* row handles tap; switch is display-only */
+        ui_theme_apply_switch(s_usb_drive_sw);
+    }
 
     // Split Length Row
     s_split_val_lbl = create_clickable_row(s_body, "Split Length", split_row_click_cb);

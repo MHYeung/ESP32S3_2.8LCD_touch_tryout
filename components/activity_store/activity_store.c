@@ -1,4 +1,5 @@
 #include "activity_store.h"
+#include "storage_paths.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -7,7 +8,6 @@
 #include "esp_log.h"
 
 static const char *TAG = "activity_store";
-#define SD_MOUNT "/sdcard"
 
 static bool ends_with(const char *s, const char *suffix) {
     if (!s || !suffix) return false;

@@ -1,6 +1,7 @@
 #include "sd_mmc_helper.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 
@@ -149,5 +150,66 @@ esp_err_t sd_mmc_helper_write_text(sd_mmc_helper_t *sd,
 
     ESP_LOGI(SD_TAG, "Wrote %u bytes to %s",
              (unsigned)len, full_path);
+    return ESP_OK;
+}
+
+esp_err_t sd_mmc_helper_init_sdmmc_raw(sdmmc_card_t **out_card)
+{
+    if (!out_card)
+        return ESP_ERR_INVALID_ARG;
+
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+    slot_config.width = 1;
+    slot_config.clk = SD_PIN_CLK;
+    slot_config.cmd = SD_PIN_CMD;
+    slot_config.d0 = SD_PIN_D0;
+    slot_config.d1 = -1;
+    slot_config.d2 = -1;
+    slot_config.d3 = -1;
+    slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+
+    esp_err_t ret = sdmmc_host_init();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(SD_TAG, "sdmmc_host_init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ret = sdmmc_host_init_slot(host.slot, &slot_config);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(SD_TAG, "sdmmc_host_init_slot failed: %s", esp_err_to_name(ret));
+        sdmmc_host_deinit();
+        return ret;
+    }
+
+    sdmmc_card_t *card = calloc(1, sizeof(sdmmc_card_t));
+    if (!card)
+    {
+        sdmmc_host_deinit();
+        return ESP_ERR_NO_MEM;
+    }
+
+    ret = sdmmc_card_init(&host, card);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(SD_TAG, "sdmmc_card_init failed: %s", esp_err_to_name(ret));
+        free(card);
+        sdmmc_host_deinit();
+        return ret;
+    }
+
+    *out_card = card;
+    ESP_LOGI(SD_TAG, "SD raw init OK for MSC");
+    return ESP_OK;
+}
+
+esp_err_t sd_mmc_helper_deinit_sdmmc_raw(sdmmc_card_t *card)
+{
+    if (!card)
+        return ESP_OK;
+    sdmmc_host_deinit();
+    free(card);
+    ESP_LOGI(SD_TAG, "SD raw deinit OK");
     return ESP_OK;
 }

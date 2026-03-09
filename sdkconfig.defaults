@@ -1,0 +1,4 @@
+# TinyUSB: enable MSC (Mass Storage) for USB drive mode
+CONFIG_TINYUSB_MSC_ENABLED=y
+# No CDC when MSC is active (avoids "disk not showing" issue)
+CONFIG_TINYUSB_CDC_ENABLED=n

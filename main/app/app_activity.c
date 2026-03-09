@@ -1,5 +1,6 @@
 #include "app_activity.h"
 
+#include "storage_paths.h"
 #include "app_context.h"
 #include "activity.h"
 #include "activity_log.h"
@@ -191,7 +192,7 @@ void activity_worker_task(void *arg)
             // The file is now complete and saved on the SD card.
             activity_log_stop(&s_act_log);
 
-            FILE *f = fopen("/sdcard/activities/index.csv", "a");
+            FILE *f = fopen(ACTIVITY_INDEX_PATH, "a");
             if (f)
             {
                 uint32_t duration_s = (uint32_t)(snapshot.duration_ms / 1000);
