@@ -1,0 +1,15 @@
+{
+  "name": "RowCoach",
+  "version": "1.0.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "improv": false,
+      "parts": [
+        { "path": "bootloader.bin", "offset": 4096 },
+        { "path": "partition-table.bin", "offset": 32768 },
+        { "path": "esp32s3_rowcoach.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}

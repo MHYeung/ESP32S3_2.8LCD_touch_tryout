@@ -1,65 +1,96 @@
-# RowCoach (ESP32S3_SpeedCoach_Touch) — Open DIY Rowing GPS & Stroke Coach
+# RowCoach — Open DIY Rowing GPS & Stroke Coach
 
-This repository contains a DIY, open-source rowing GPS and stroke coaching project built on ESP32-S3. It combines simple stroke detection and GPS-based speed/pace calculations with a compact LVGL touchscreen UI to provide a lower-cost alternative for coaches and athletes.
-
-## 1. Features
-
-- Display + touch UI using LVGL and an ESP32-S3 driver stack.
-- Responsive UI Data Page with three configurable data slots (time, strokes, SPM by default). See [main/ui/ui_data_page.c](main/ui/ui_data_page.c) for layout and font logic.
-- Activity toast: a small circular status toast used to indicate activity start/stop. Background color shows state (green = start, red = stop); icon text remains white. Configurable in [main/ui/ui_data_page.c](main/ui/ui_data_page.c).
-- Activity logging & splits: persistent CSV logging to SD card with configurable split interval. The logging API and task live in `components/activity_log` (see `activity_log_start`, `activity_log_append`, `activity_log_stop`) and `main` enqueues rows to an activity logger task for durable writes.
-- Activity store & format helpers: `components/activity_store` provides path resolution, split loading and summary calculation (`activity_store_split_t`, `activity_store_summary_t`) plus formatting helpers such as `activity_store_format_dist` and `activity_store_format_pace_500` for UI and export.
-- Activity Summary & Detail pages: browse saved activities on SD, see per-activity summaries (distance, duration, avg pace) and drill into split-level detail. Implemented in `main/ui/ui_core.c` with a menu entry in `main/ui/ui_menu_page.c`.
-- Shutdown prompt with two action buttons (`Shutdown` and `Cancel`). Buttons are styled with colored backgrounds and white labels. See [main/ui/ui_core.c](main/ui/ui_core.c).
-- Dark/light theme support and orientation handling. Theme code lives in [main/ui/ui_theme.c/h](/main/ui/ui_theme.c) (where applicable) and is initialized at startup.
-- Modular components under `components/` for sensors, drivers and helpers (I2C, SD/MMC, RTC, GPS, touch controller, etc.).
-
-## 2. Background
-
-RowCoach aims to make basic rowing performance tools accessible and affordable. The project provides:
-
-- Simple, robust stroke detection (sensor-driven) to count strokes and detect stroke events.
-- GPS-based speed and pacing calculations to report instantaneous and average pace/speed.
-- A compact touchscreen UI for real-time feedback and basic interactions (start/stop, settings, activity logs).
-
-The codebase is intentionally small and componentized so hobbyists and coaches can adapt hardware, tweak algorithms, and extend functionality. It has been tested with an ESP32-S3 development board and a Waveshare 2.8" SPI TFT touchscreen; pin mappings and driver selection are controlled via the `components/` folder and `sdkconfig`.
-
-Development workflow: standard ESP-IDF build flow. Use `idf.py build` and `idf.py flash` from the repository root (make sure ESP-IDF and the toolchain are set up per Espressif docs).
-
-## 3. Dev changelog
-
-Recent development entries (newest first):
-
-- 2026-01-05 — activity_store — added split loading, summary calculation and formatting helpers (path resolution, distance/pace formatting)
-- 2026-01-04 — ui — added Activity Summary & Detail pages and menu integration for browsing activities
-- 2026-01-03 — activity_log — improved split append and logger task export to SD
-- 2025-12-26 — 4add2b3 — activity logger task init
-- 2025-12-26 — dc0840f — added activity saving
-- 2025-12-24 — 337d897 — pwr_key ux
-- 2025-12-24 — b254c29 — pwr_key, battery init
-- 2025-12-23 — 99d8e04 — rtc_pcf85063_init
-- 2025-12-22 — 4dde18a — status bar component
-- 2025-12-22 — 3799df6 — menu page and activity page init
-- 2025-12-21 — 7ad657e — update SPM algo - dynamic
-
-If you want the changelog to reflect a different range of commits or more/less detail, tell me how many entries you want and I'll update it.
+A DIY, open-source rowing GPS and stroke coaching device built on ESP32-S3. Combines IMU-based stroke detection and GPS-based speed/pace with a compact LVGL touchscreen UI — a lower-cost alternative for coaches and athletes.
 
 ---
 
-See the `main/ui/` folder for UI implementation details and `components/` for hardware driver code. If you'd like, I can add small usage examples or a contributor guide next.
+## 1. Features
 
-## 4. Pins & modules
+RowCoach provides:
 
-Below is a concise table of the main function modules and where their drivers/components live. Pin assignments are generally configurable — check the component folder and `sdkconfig` for the concrete mappings used for your board.
+| Feature | Description |
+|--------|-------------|
+| **Real-time stroke metrics** | Stroke count, SPM (strokes per minute), and stroke length from onboard IMU (QMI8658) |
+| **GPS speed & pace** | Instant and average pace (e.g. /500 m), speed, and distance via GT-U8 GNSS |
+| **Configurable data slots** | Three slots on the main data page; choose from time, strokes, SPM, pace, distance, speed, stroke length |
+| **Activity logging** | CSV logs to SD card with configurable split intervals |
+| **Activity browser** | Browse saved activities, view summaries (distance, duration, avg pace), and drill into split-level detail |
+| **Status bar** | Time (from RTC), battery level, GPS fix status |
+| **Dark/light theme** | Theme and orientation configurable in settings |
+| **Power management** | Power button, shutdown prompt, battery monitoring |
 
-| Module | Component / Driver | Default / Notes |
-|---|---:|---|
-| I2C (sensor bus) | [components/i2c_helper](components/i2c_helper) | SDK reports 2 I2C ports (CONFIG_SOC_I2C_NUM=2); see `sdkconfig` for mappings |
-| IMU (QMI8658) | [components/qmi8658](components/qmi8658) | I2C1: SDA=11, SCL=10, INT1=13, INT2=12 (CONFIG_IMU_QMI8658_*) |
-| GPS (GNSS) | [components/gps_gt_u8](components/gps_gt_u8) | Typically UART; TX/RX pins configurable in component or `sdkconfig` |
-| Display (ST7789) | [components/lcd_st7789](components/lcd_st7789) | SPI: MOSI=45, SCLK=40, MISO=-1, DC=41, CS=42, RST=39, BL=5 (CONFIG_LCD_ST7789_*) |
-| Touch controller (CST328) | [components/touch_cst328](components/touch_cst328) | I2C0: SDA=1, SCL=3, RST=2, INT=4, I2C clk=400k (CONFIG_TOUCH_CST328_*) |
-| Power button | [components/pwr_key](components/pwr_key) | GPIO pin set at runtime/config — see component config or `main/main.c` setup |
-| Battery monitor | [components/battery_drv](components/battery_drv) | ADC or I2C depending on board; see component |
-| RTC (PCF85063) | [components/rtc_pcf85063](components/rtc_pcf85063) | On the IMU I2C bus (I2C1 in current config) — see `PCF85063_init` usage |
-| SD/MMC storage | [components/sd_mmc_helper](components/sd_mmc_helper) | SDIO or SPI mode; pins configurable in component |
+---
+
+## 2. Bill of Materials (BOM)
+
+The base is a **Waveshare 2.8" LCD touch** module (ESP32-S3 + display + touch + QMI8658 IMU + PCF85063 RTC + TF slot + battery charging circuitry). You add the following to complete the speed coach:
+
+| # | Item | Description | Notes |
+|---|------|-------------|-------|
+| 1 | **Waveshare ESP32-S3 2.8" Touch LCD** | Base module (e.g. ESP32-S3-Touch-LCD-2.8B or 2.8C) | 240×320 or 480×480, ST7789/CST328, QMI8658, PCF85063, TF slot |
+| 2 | **RTC backup battery** | CR2032 or compatible coin cell for RTC | Keeps time when main power is off; connect to RTC battery header |
+| 3 | **LiPo battery** | 3.7 V LiPo (e.g. 500–1000 mAh) | For portable use; connect to 2-pin MX1.25 battery header |
+| 4 | **GT-U8 GPS module** | GPS/BDS dual-mode GNSS module | UART 9600 baud; connect TX→RXD, RX→TXD (GPIO43/44) |
+| 5 | **microSD card** | For activity logging | Optional; insert into onboard TF slot |
+
+### Wiring (GT-U8 to base module)
+
+| GT-U8 | Base module (12-pin) |
+|-------|----------------------|
+| VCC   | 3V3                  |
+| GND   | GND                  |
+| TX    | RXD (GPIO44)         |
+| RX    | TXD (GPIO43)         |
+
+---
+
+## 3. Background
+
+RowCoach aims to make basic rowing performance tools accessible and affordable:
+
+- **Stroke detection** — IMU-driven stroke counting and SPM
+- **GPS metrics** — Speed, pace, and distance from GNSS
+- **Touchscreen UI** — Start/stop, settings, activity logs
+
+The codebase is small and componentized so you can adapt hardware, tweak algorithms, and extend features. Tested with a Waveshare ESP32-S3 2.8" touch LCD; pin mappings are in `components/` and `sdkconfig`.
+
+**Build & flash:** `idf.py build` and `idf.py flash` (ESP-IDF required). Or use [flash.html](flash.html) for browser-based flashing.
+
+---
+
+## 4. Dev changelog
+
+Recent development entries (newest first):
+
+- 2026-03-09 — settings — added USB device mode
+- 2026-01-28 — ui — simplify UI
+- 2026-01-21 — data page — replace power with stroke length; ui relayout
+- 2026-01-20 — ui relayout; interval_csv update
+- 2026-01-18 — update folder structure
+- 2026-01-13 — activity_log — refine log and read; simplify menu; remove race
+- 2026-01-12 — race_program — init and fine tune; activity_log update
+- 2026-01-11 — refine activity_type
+- 2026-01-10 — refine activity_detail
+- 2026-01-09 — refactor folder; settings — datetime row update
+- 2026-01-08 — activity summary — page view UI; interval data page and reminder prompts; activity_detail nav_bar
+- 2026-01-07 — interval setup page UI; activity ui layout update
+
+---
+
+## 5. Pins & modules
+
+| Module | Component | Default / Notes |
+|--------|-----------|-----------------|
+| I2C (sensor bus) | [i2c_helper](components/i2c_helper) | 2 I2C ports; see `sdkconfig` |
+| IMU (QMI8658) | [qmi8658](components/qmi8658) | I2C1: SDA=11, SCL=10, INT1=13, INT2=12 |
+| GPS (GT-U8) | [gps_gt_u8](components/gps_gt_u8) | UART1: TX=43, RX=44, 9600 baud |
+| Display (ST7789) | [lcd_st7789](components/lcd_st7789) | SPI: MOSI=45, SCLK=40, DC=41, CS=42, RST=39, BL=5 |
+| Touch (CST328) | [touch_cst328](components/touch_cst328) | I2C0: SDA=1, SCL=3, RST=2, INT=4 |
+| Power button | [pwr_key](components/pwr_key) | See component config |
+| Battery monitor | [battery_drv](components/battery_drv) | ADC; GPIO8 (CH7), voltage divider |
+| RTC (PCF85063) | [rtc_pcf85063](components/rtc_pcf85063) | I2C1 (shared with IMU) |
+| SD/MMC | [sd_mmc_helper](components/sd_mmc_helper) | TF slot; SDIO or SPI |
+
+---
+
+See `main/ui/` for UI details and `components/` for hardware drivers.

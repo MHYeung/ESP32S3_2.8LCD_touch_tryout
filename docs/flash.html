@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RowCoach — Flash Firmware</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 480px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      color: #333;
+    }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    p { color: #666; font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.5rem; }
+    esp-web-install-button { margin: 1rem 0; }
+  </style>
+</head>
+<body>
+  <h1>RowCoach — Flash Firmware</h1>
+  <p>Connect your ESP32-S3 board via USB, then click <strong>Install</strong> to flash the firmware. Requires Chrome or Edge.</p>
+  <script type="module" src="https://unpkg.com/esp-web-tools@11/dist/web/install-button.js?module"></script>
+  <esp-web-install-button manifest="docs/manifest.json"></esp-web-install-button>
+</body>
+</html>

@@ -5,4 +5,4 @@
 cmake_minimum_required(VERSION 3.5)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(waveshare2.8lcd_tryout)
+project(esp32s3_rowcoach)
