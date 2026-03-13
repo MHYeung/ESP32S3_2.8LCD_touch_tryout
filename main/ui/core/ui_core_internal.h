@@ -73,6 +73,7 @@ extern bool ui_s_dark_mode;
 void ui_pages_relayout(void);
 void ui_relayout_dialogs(void);
 void create_pages_ui(void);
+void ensure_interval_setup_page(void);
 
 void top_swipe_event_cb(lv_event_t *e);
 void settings_bottom_swipe_event_cb(lv_event_t *e);

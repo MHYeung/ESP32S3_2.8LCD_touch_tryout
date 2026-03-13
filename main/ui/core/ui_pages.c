@@ -59,14 +59,7 @@ void create_pages_ui(void)
     ui_theme_apply_screen(ui_s_page_activity_detail);
     activity_detail_page_create(ui_s_page_activity_detail);
 
-    // Interval Setup page
-    ui_s_page_interval_setup = lv_obj_create(ui_s_scr);
-    lv_obj_set_size(ui_s_page_interval_setup, lv_pct(100), lv_pct(100));
-    lv_obj_clear_flag(ui_s_page_interval_setup, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_pad_all(ui_s_page_interval_setup, 0, 0);
-    lv_obj_set_style_border_width(ui_s_page_interval_setup, 0, 0);
-    ui_theme_apply_screen(ui_s_page_interval_setup);
-    interval_setup_page_create(ui_s_page_interval_setup);
+    // Interval Setup page - created lazily on first navigation to reduce startup memory
 
     // Interval Data page (gallery)
     ui_s_page_interval_data = lv_obj_create(ui_s_scr);
@@ -118,5 +111,24 @@ void create_pages_ui(void)
     lv_obj_add_event_cb(ui_s_interval_left_gesture, interval_left_swipe_event_cb, LV_EVENT_ALL, NULL);
 
     ui_s_current_page = UI_PAGE_DATA;
+    ui_pages_relayout();
+}
+
+void ensure_interval_setup_page(void)
+{
+    if (ui_s_page_interval_setup)
+        return;
+    if (!ui_s_scr)
+        return;
+
+    ui_s_page_interval_setup = lv_obj_create(ui_s_scr);
+    lv_obj_set_size(ui_s_page_interval_setup, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(ui_s_page_interval_setup, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(ui_s_page_interval_setup, 0, 0);
+    lv_obj_set_style_border_width(ui_s_page_interval_setup, 0, 0);
+    ui_theme_apply_screen(ui_s_page_interval_setup);
+    interval_setup_page_create(ui_s_page_interval_setup);
+
+    /* Position the new page correctly (hidden above screen) */
     ui_pages_relayout();
 }

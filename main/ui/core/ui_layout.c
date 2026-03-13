@@ -286,8 +286,6 @@ void ui_go_to_page(ui_page_t target, bool animated)
         return;
     if ((target == UI_ACTIVITY_DETAIL_PAGE) && !ui_s_page_activity_detail)
         return;
-    if ((target == UI_INTERVAL_SETUP_PAGE) && !ui_s_page_interval_setup)
-        return;
     if ((target == UI_INTERVAL_DATA_PAGE) && (!ui_s_page_interval_data || !ui_s_interval_data_visible))
         return;
 
@@ -295,6 +293,16 @@ void ui_go_to_page(ui_page_t target, bool animated)
         ui_s_interval_start_armed = false;
 
     lvgl_port_lock(0);
+
+    /* Lazy-create interval setup page on first navigation */
+    if (target == UI_INTERVAL_SETUP_PAGE)
+        ensure_interval_setup_page();
+    if ((target == UI_INTERVAL_SETUP_PAGE) && !ui_s_page_interval_setup)
+    {
+        lvgl_port_unlock();
+        return;
+    }
+
     lv_coord_t h = lv_obj_get_height(ui_s_scr);
     lv_coord_t w = lv_obj_get_width(ui_s_scr);
 

@@ -52,7 +52,8 @@ void init_display_and_lvgl(void)
     ESP_ERROR_CHECK(lcd_st7789_init(&panel_handle, &io_handle));
 
     ESP_LOGI(TAG, "Init LVGL port...");
-    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_cfg.task_stack = 12288; /* 12 KB — default 7 KB overflows on lazy interval setup page creation */
     ESP_ERROR_CHECK(lvgl_port_init(&lvgl_cfg));
 
     ESP_LOGI(TAG, "Add LVGL display...");

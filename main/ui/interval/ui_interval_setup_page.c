@@ -364,7 +364,8 @@ void interval_setup_page_create(lv_obj_t *parent)
     lv_label_set_text(lq, "Confirm");
     lv_obj_center(lq);
 
-    relayout_request();
+    /* Run initial relayout synchronously to avoid async timing issues during first show */
+    relayout_now();
 }
 
 void interval_setup_page_apply_theme(void)
