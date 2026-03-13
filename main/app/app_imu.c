@@ -162,21 +162,19 @@ void stroke_task(void *arg)
         .accel_use_fixed_axis = true, // Keep true if you know the mounting orientation
         .accel_fixed_axis = 2,        // Ensure this matches your physical mount (2 = Z-axis usually)
 
-        // FILTERS (CRITICAL CHANGE):
-        // Boat surge is a slow, rhythmic "push" (approx 0.5 - 1.0 Hz).
-        // High frequencies (engine vibration, water chop) must be aggressively cut.
-        .hpf_hz = 0.1f, // Was 0.2f. Needs to pass the very slow drive start.
-        .lpf_hz = 3.0f, // Was 1.2f. Raised slightly to capture the sharp "catch" impact, but still filter vibration.
+        // FILTERS: pass the slow rhythmic rowing surge (0.5-1.0 Hz), cut bus vibration.
+        .hpf_hz = 0.1f,  // pass very slow drive start
+        .lpf_hz = 2.0f,  // tightened from 3.0 Hz to cut more high-freq bus vibration
 
         // TIMING:
-        .min_stroke_period_s = 0.9f, // ~66 SPM max; avoids counting very fast double-events
+        .min_stroke_period_s = 0.9f, // ~66 SPM max
         .max_stroke_period_s = 6.0f, // 10 SPM min
-        .min_catch_interval_s = 0.55f, // Debounce: min time between catches (fixes double SPM in pocket)
+        .min_catch_interval_s = 0.75f, // tightened debounce (was 0.55s) — rejects rapid bus bumps
 
-        // THRESHOLDS (less sensitive for pocket/noisy mounting):
-        // Higher thr_floor and thr_k reduce false triggers from jitter.
-        .thr_k = 1.6f,
-        .thr_floor = 0.55f, // ~0.056g; was 0.35 - raises bar for pocket motion
+        // THRESHOLDS: raised to ignore bus/hand shake (~0.05-0.3g) while catching real rowing strokes.
+        // Real rowing catch on a hull: 0.5-2g; bus shake: <0.3g (~2.9 m/s²).
+        .thr_k = 2.5f,    // was 1.6 — need signal much larger than noise floor
+        .thr_floor = 1.8f, // was 0.55 (~0.056g); now ~0.18g — filters casual shaking
     };
 
     stroke_detection_init(&s_stroke, &cfg);
@@ -550,7 +548,7 @@ void stroke_task(void *arg)
                 {
                     s_last_recording_ui = recording;
                 }
-                if (force_full_redraw || (recording && ev == STROKE_EVENT_CATCH))
+                if (force_full_redraw || ev == STROKE_EVENT_CATCH)
                 {
                     float spm_raw_ui = s_last_valid_spm;
                     if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f)
@@ -573,7 +571,7 @@ void stroke_task(void *arg)
                     .pace_s_per_500m = recording ? pace : NAN,
                     .avg_pace_s_per_500m = recording ? avg_pace_s : NAN,
                     .speed_mps = recording ? speed_mps : NAN,
-                    .spm = recording ? spm_disp : NAN,
+                    .spm = spm_disp,   /* show live SPM even when not recording */
                     .stroke_len_m = stroke_len_disp,
                     .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
                 };
