@@ -217,14 +217,34 @@ void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent)
     ui_theme_apply_label(bar->gps_icon, true);
     lv_label_set_text(bar->gps_icon, LV_SYMBOL_GPS);
 
-    bar->gps_dot = lv_obj_create(bar->gps_cont);
-    lv_obj_remove_style_all(bar->gps_dot);
-    lv_obj_set_size(bar->gps_dot, 10, 10);
-    lv_obj_set_style_radius(bar->gps_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_opa(bar->gps_dot, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(bar->gps_dot, 0, 0);
+    /* 4-bar signal-strength widget — bars grow upward from a shared baseline */
+    lv_obj_t *bars_cont = lv_obj_create(bar->gps_cont);
+    lv_obj_remove_style_all(bars_cont);
+    lv_obj_set_style_bg_opa(bars_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(bars_cont, 0, 0);
+    lv_obj_set_style_pad_all(bars_cont, 0, 0);
+    lv_obj_set_style_pad_column(bars_cont, 2, 0);
+    lv_obj_set_size(bars_cont, 18, 12);
+    lv_obj_set_layout(bars_cont, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(bars_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(bars_cont,
+                          LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_END,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(bars_cont, LV_OBJ_FLAG_SCROLLABLE);
 
-    // keep your default-bar behavior
+    static const lv_coord_t bar_h[4] = {4, 6, 9, 12};
+    for (int i = 0; i < 4; i++) {
+        bar->gps_bars[i] = lv_obj_create(bars_cont);
+        lv_obj_remove_style_all(bar->gps_bars[i]);
+        lv_obj_set_size(bar->gps_bars[i], 3, bar_h[i]);
+        lv_obj_set_style_radius(bar->gps_bars[i], 1, 0);
+        lv_obj_set_style_bg_opa(bar->gps_bars[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(bar->gps_bars[i], 0, 0);
+        lv_obj_clear_flag(bar->gps_bars[i], LV_OBJ_FLAG_SCROLLABLE);
+    }
+
+    /* keep your default-bar behavior */
     ui_status_bar_set_default(bar);
     ui_status_bar_set_gps_status(bar, s_cached_gps_connected, s_cached_gps_bars);
 
@@ -266,30 +286,42 @@ void ui_status_bar_apply_theme(ui_status_bar_t *bar)
         ui_theme_apply_label(bar->gps_icon, true);
     if (bar->batt_label)
         ui_theme_apply_label(bar->batt_label, true);
+
+    /* Re-apply bar colours for the current signal state */
+    ui_status_bar_set_gps_status(bar, bar->gps_connected, bar->gps_bars_count);
 }
 
 void ui_status_bar_set_gps_status(ui_status_bar_t *bar, bool connected, uint8_t bars_0_to_4)
 {
-    if (!bar || !bar->gps_dot || !bar->gps_icon) return;
+    if (!bar || !bar->gps_icon) return;
 
     uint8_t bars = (bars_0_to_4 > 4) ? 4 : bars_0_to_4;
 
-    // Map to quality:
-    // - red: not connected OR connected but no fix (bars==0)
-    // - yellow: weak (1–2)
-    // - green: good (3–4)
-    lv_color_t c;
-    if (!connected || bars == 0) {
-        c = lv_palette_main(LV_PALETTE_GREEN);
-    } else if (bars <= 2) {
-        c = lv_palette_main(LV_PALETTE_YELLOW);
-    } else {
-        c = lv_palette_main(LV_PALETTE_RED);
+    /* Cache so apply_theme can re-apply the correct colours */
+    bar->gps_connected   = connected;
+    bar->gps_bars_count  = bars;
+
+    /*
+     * Signal colour mapping (corrected):
+     *   red    — no module or no fix
+     *   yellow — weak signal (1-2 bars)
+     *   green  — good signal (3-4 bars)
+     */
+    lv_color_t sig_color;
+    if (!connected || bars == 0)
+        sig_color = lv_palette_main(LV_PALETTE_RED);
+    else if (bars <= 2)
+        sig_color = lv_palette_main(LV_PALETTE_YELLOW);
+    else
+        sig_color = lv_palette_main(LV_PALETTE_GREEN);
+
+    lv_color_t dim = lv_color_make(80, 80, 80);
+    for (int i = 0; i < 4; i++) {
+        if (!bar->gps_bars[i]) continue;
+        lv_obj_set_style_bg_color(bar->gps_bars[i],
+                                  (i < (int)bars) ? sig_color : dim, 0);
     }
 
-    lv_obj_set_style_bg_color(bar->gps_dot, c, 0);
-
-    // Keep icon stable (no more bars string)
     lv_label_set_text(bar->gps_icon, LV_SYMBOL_GPS);
 }
 

@@ -25,6 +25,7 @@ idf_component_register(
         "ui/interval/ui_interval_setup_page.c"
         "ui/interval/ui_interval_data_page.c"
         "interval_program/interval_program.c"
+        "ui/fonts/lv_font_fa_solid_28.c"
         
     INCLUDE_DIRS
         "."

@@ -8,11 +8,11 @@
 typedef struct {
     lv_obj_t *root;
     lv_obj_t *time_label;
-    
-    // GPS widget (icon + color dot)
+
+    /* GPS widget: icon + 4-bar signal strength indicator */
     lv_obj_t *gps_cont;
     lv_obj_t *gps_icon;
-    lv_obj_t *gps_dot;
+    lv_obj_t *gps_bars[4]; /* ascending-height bars, bottom-aligned */
 
     lv_obj_t *batt_label;
     lv_timer_t *clock_timer;
@@ -21,7 +21,7 @@ typedef struct {
     uint32_t clock_start_sec;
     ui_orientation_t orient;
     bool gps_connected;
-    uint8_t gps_bars;
+    uint8_t gps_bars_count; /* last known bar count (0-4) */
 } ui_status_bar_t;
 
 void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent);

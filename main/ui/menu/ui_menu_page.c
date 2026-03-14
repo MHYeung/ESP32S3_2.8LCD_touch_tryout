@@ -11,6 +11,14 @@
 
 static const char *TAG = "ui_menu";
 
+/* FontAwesome 6 Free Solid — custom subset (28 px, bpp 4) */
+extern const lv_font_t lv_font_fa_solid_28;
+
+/* UTF-8 encodings of the selected glyphs */
+#define FA_ICON_MEDAL     "\xEF\x96\xA2"   /* U+F5A2  fa-medal       */
+#define FA_ICON_STOPWATCH "\xEF\x8B\xB2"   /* U+F2F2  fa-stopwatch   */
+#define FA_ICON_SLIDERS   "\xEF\x87\x9E"   /* U+F1DE  fa-sliders     */
+
 static lv_obj_t *s_grid = NULL;
 
 #define MENU_ICON_COUNT 3
@@ -69,9 +77,8 @@ static lv_obj_t *create_icon_btn(lv_obj_t *parent, const char *symbol, const cha
     lv_label_set_text(ic, symbol);
     ui_theme_apply_label(ic, false);
 
-    /* Make the symbol bigger */
-    // Pick fonts that you have enabled in lv_conf.h (see note below)
-    lv_obj_set_style_text_font(ic, &lv_font_montserrat_24, 0);
+    /* FontAwesome 6 Free Solid custom glyph font */
+    lv_obj_set_style_text_font(ic, &lv_font_fa_solid_28, 0);
 
     /* Text under icon */
     lv_obj_t *lb = lv_label_create(btn);
@@ -199,9 +206,9 @@ void menu_page_create(lv_obj_t *parent)
 
     // Create 3 buttons
     s_btn_count = 0;
-    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_LIST, "Activity Summary", "activity_summary", btn_size);
-    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_REFRESH, "Interval", "interval", btn_size);
-    s_btns[s_btn_count++] = create_icon_btn(s_grid, LV_SYMBOL_SETTINGS, "Settings", "settings", btn_size);
+    s_btns[s_btn_count++] = create_icon_btn(s_grid, FA_ICON_MEDAL,     "Activity",  "activity_summary", btn_size);
+    s_btns[s_btn_count++] = create_icon_btn(s_grid, FA_ICON_STOPWATCH, "Interval",  "interval",         btn_size);
+    s_btns[s_btn_count++] = create_icon_btn(s_grid, FA_ICON_SLIDERS,   "Settings",  "settings",         btn_size);
 
     // Apply orientation-dependent layout
     menu_apply_grid_layout();

@@ -14,7 +14,7 @@
 static const char *TAG = "ui_act_detail";
 
 #include "storage_paths.h"
-#define PAGE_ROWS 10
+#define PAGE_ROWS 6
 
 static uint32_t s_act_id = 0;
 static char s_base_full[192] = {0}; // full base path WITHOUT suffix, e.g. "/sdcard/activities/20260104_2235_01"
@@ -65,6 +65,28 @@ static ui_status_bar_t s_status;
 static lv_obj_t *s_hdr_lbl[4] = {0};
 
 static void request_load(void);
+
+/*
+ * Alternating row tint for the split table (LVGL v9).
+ * Even rows use the theme surface colour; odd rows receive a subtle tint.
+ * Must register LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS on the table object.
+ */
+static void tbl_row_tint_cb(lv_event_t *e)
+{
+    lv_draw_task_t *t = lv_event_get_draw_task(e);
+    if (!t) return;
+    if (lv_draw_task_get_type(t) != LV_DRAW_TASK_TYPE_FILL) return;
+
+    lv_draw_fill_dsc_t *fill = lv_draw_task_get_fill_dsc(t);
+    if (!fill) return;
+    if (fill->base.part != LV_PART_ITEMS) return;
+
+    uint32_t row = fill->base.id1;
+    if (row % 2 == 1) {
+        /* Blend 10% black into the existing cell background for a subtle stripe */
+        fill->color = lv_color_mix(lv_color_make(0, 0, 0), fill->color, 26);
+    }
+}
 
 #define SPLIT_COLS 4
 static const lv_coord_t s_col_w[SPLIT_COLS] = {24, 60, 74, 74}; // tweak to taste
@@ -794,8 +816,16 @@ void activity_detail_page_create(lv_obj_t *parent)
         lv_table_set_col_width(s_tbl, c, s_col_w[c]);
     }
 
-    lv_obj_set_style_pad_all(s_tbl, 2, LV_PART_ITEMS);
+    lv_obj_set_style_pad_all(s_tbl, 5, LV_PART_ITEMS);
     lv_obj_set_style_text_align(s_tbl, LV_TEXT_ALIGN_CENTER, LV_PART_ITEMS);
+
+    /* Explicit item background so the FILL draw task is always emitted */
+    lv_obj_set_style_bg_opa(s_tbl, LV_OPA_COVER, LV_PART_ITEMS);
+    lv_obj_set_style_bg_color(s_tbl, ui_theme_palette()->surface, LV_PART_ITEMS);
+
+    /* Alternating row tint via draw-task hook (LVGL v9 API) */
+    lv_obj_add_flag(s_tbl, LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
+    lv_obj_add_event_cb(s_tbl, tbl_row_tint_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
 
     // Hint label (shown when no splits)
     s_hint = lv_label_create(s_scroller);
@@ -823,8 +853,6 @@ void activity_detail_page_apply_theme(void)
     if (!s_root)
         return;
     ui_status_bar_apply_theme(&s_status);
-    // s_hdr_row uses ui_theme_apply_surface at creation; if theme changes at runtime
-    // and you want it to re-apply, call ui_theme_apply_surface(s_hdr_row) here.
     if (s_hdr_row)
         ui_theme_apply_surface(s_hdr_row);
     if (s_btn_prev)
@@ -833,6 +861,9 @@ void activity_detail_page_apply_theme(void)
         ui_theme_apply_button(s_btn_next);
     if (s_page_lbl)
         ui_theme_apply_label(s_page_lbl, true);
+    /* Re-apply base cell background colour to match the new theme surface */
+    if (s_tbl)
+        lv_obj_set_style_bg_color(s_tbl, ui_theme_palette()->surface, LV_PART_ITEMS);
 }
 
 void activity_detail_page_on_orientation_changed(void)
