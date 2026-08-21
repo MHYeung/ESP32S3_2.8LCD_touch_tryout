@@ -14,7 +14,7 @@
 static const char *TAG = "ui_act_detail";
 
 #include "storage_paths.h"
-#define PAGE_ROWS 6
+#define PAGE_ROWS 8
 
 static uint32_t s_act_id = 0;
 static char s_base_full[192] = {0}; // full base path WITHOUT suffix, e.g. "/sdcard/activities/20260104_2235_01"
@@ -582,20 +582,14 @@ static void relayout(void)
     bool land = ui_is_landscape();
     lv_coord_t w = lv_obj_get_width(s_root);
 
-    // tighter padding in landscape
-    lv_coord_t pad_lr = land ? 6 : 1;
-    lv_coord_t name_h = land ? 20 : 26;
-    lv_coord_t hdr_h = land ? 20 : 24;
-    lv_coord_t nav_h = land ? 22 : 26;
+    lv_coord_t pad_lr = land ? 6 : 2;
+    lv_coord_t hdr_h = land ? 16 : 18;
+    lv_coord_t nav_h = land ? 20 : 22;
 
-    // Name bar sizing
     if (s_name_lbl)
     {
-        lv_obj_set_height(s_name_lbl, name_h);
-        lv_obj_set_style_pad_left(s_name_lbl, pad_lr, 0);
-        lv_obj_set_style_pad_right(s_name_lbl, pad_lr, 0);
-        lv_obj_set_style_pad_top(s_name_lbl, 0, 0);
-        lv_obj_set_style_pad_bottom(s_name_lbl, 0, 0);
+        lv_obj_set_style_pad_left(s_name_lbl, 4, 0);
+        lv_obj_set_style_text_font(s_name_lbl, &lv_font_montserrat_16, 0);
     }
 
     // Header row sizing
@@ -624,9 +618,9 @@ static void relayout(void)
     }
 
     if (s_btn_prev)
-        lv_obj_set_size(s_btn_prev, land ? 44 : 52, nav_h);
+        lv_obj_set_size(s_btn_prev, land ? 36 : 40, nav_h);
     if (s_btn_next)
-        lv_obj_set_size(s_btn_next, land ? 44 : 52, nav_h);
+        lv_obj_set_size(s_btn_next, land ? 36 : 40, nav_h);
 
     // Column widths depend on screen width/orientation
     lv_coord_t usable = w - (pad_lr * 2);
@@ -706,7 +700,7 @@ void activity_detail_page_create(lv_obj_t *parent)
     ui_theme_apply_screen(parent);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Root column layout: status bar -> name label -> frozen header -> scroller
+    // Root: compact status -> title+pager -> header -> split table
     s_root = lv_obj_create(parent);
     lv_obj_set_size(s_root, lv_pct(100), lv_pct(100));
     lv_obj_set_style_pad_all(s_root, 0, 0);
@@ -717,34 +711,25 @@ void activity_detail_page_create(lv_obj_t *parent)
 
     ui_status_bar_create(&s_status, s_root);
 
-    // Activity name bar (just a label under status bar)
-    lv_obj_t *name_bar = lv_obj_create(s_root);
-    lv_obj_set_width(name_bar, lv_pct(100));
-    lv_obj_set_height(name_bar, 26);
-    lv_obj_set_style_bg_opa(name_bar, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(name_bar, 0, 0);
-    lv_obj_set_style_pad_left(name_bar, 10, 0);
-    lv_obj_set_style_pad_right(name_bar, 10, 0);
-    lv_obj_set_style_pad_top(name_bar, 2, 0);
-    lv_obj_set_style_pad_bottom(name_bar, 0, 0);
-    lv_obj_clear_flag(name_bar, LV_OBJ_FLAG_SCROLLABLE);
-
-    s_name_lbl = lv_label_create(name_bar);
-    ui_theme_apply_label(s_name_lbl, false);
-    lv_obj_set_width(s_name_lbl, lv_pct(100));
-    lv_label_set_long_mode(s_name_lbl, LV_LABEL_LONG_DOT);
-    lv_label_set_text(s_name_lbl, "Activity");
-
-    // Page navigation row
     s_nav_row = lv_obj_create(s_root);
     lv_obj_set_width(s_nav_row, lv_pct(100));
-    lv_obj_set_height(s_nav_row, 26);
+    lv_obj_set_height(s_nav_row, 22);
     lv_obj_set_style_bg_opa(s_nav_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_nav_row, 0, 0);
     lv_obj_set_style_pad_all(s_nav_row, 0, 0);
+    lv_obj_set_style_pad_left(s_nav_row, 4, 0);
+    lv_obj_set_style_pad_right(s_nav_row, 4, 0);
+    lv_obj_clear_flag(s_nav_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(s_nav_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(s_nav_row, LV_FLEX_ALIGN_SPACE_BETWEEN,
+    lv_obj_set_flex_align(s_nav_row, LV_FLEX_ALIGN_START,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    s_name_lbl = lv_label_create(s_nav_row);
+    ui_theme_apply_label(s_name_lbl, false);
+    lv_obj_set_flex_grow(s_name_lbl, 1);
+    lv_obj_set_style_text_font(s_name_lbl, &lv_font_montserrat_16, 0);
+    lv_label_set_long_mode(s_name_lbl, LV_LABEL_LONG_DOT);
+    lv_label_set_text(s_name_lbl, "Activity");
 
     s_btn_prev = lv_btn_create(s_nav_row);
     ui_theme_apply_button(s_btn_prev);
@@ -756,6 +741,8 @@ void activity_detail_page_create(lv_obj_t *parent)
 
     s_page_lbl = lv_label_create(s_nav_row);
     ui_theme_apply_label(s_page_lbl, true);
+    lv_obj_set_style_text_font(s_page_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_pad_hor(s_page_lbl, 4, 0);
     lv_label_set_text(s_page_lbl, "0/0");
 
     s_btn_next = lv_btn_create(s_nav_row);
@@ -766,15 +753,14 @@ void activity_detail_page_create(lv_obj_t *parent)
     lv_label_set_text(next_lbl, LV_SYMBOL_RIGHT);
     lv_obj_align(next_lbl, LV_ALIGN_CENTER, 0, 0);
 
-    // Frozen header row (NOT scrollable)
     s_hdr_row = lv_obj_create(s_root);
     lv_obj_set_width(s_hdr_row, lv_pct(100));
-    lv_obj_set_height(s_hdr_row, 24);
+    lv_obj_set_height(s_hdr_row, 18);
     lv_obj_set_style_border_width(s_hdr_row, 0, 0);
     lv_obj_set_style_pad_left(s_hdr_row, 4, 0);
     lv_obj_set_style_pad_right(s_hdr_row, 4, 0);
-    lv_obj_set_style_pad_top(s_hdr_row, 2, 0);
-    lv_obj_set_style_pad_bottom(s_hdr_row, 1, 0);
+    lv_obj_set_style_pad_top(s_hdr_row, 0, 0);
+    lv_obj_set_style_pad_bottom(s_hdr_row, 0, 0);
     ui_theme_apply_surface(s_hdr_row); // looks like a header strip
     lv_obj_clear_flag(s_hdr_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_flex_flow(s_hdr_row, LV_FLEX_FLOW_ROW);
@@ -789,6 +775,7 @@ void activity_detail_page_create(lv_obj_t *parent)
         lv_obj_set_width(s_hdr_lbl[c], s_col_w[c]);
         lv_obj_set_flex_grow(s_hdr_lbl[c], 0);
         lv_obj_set_style_text_align(s_hdr_lbl[c], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(s_hdr_lbl[c], &lv_font_montserrat_16, 0);
         lv_label_set_long_mode(s_hdr_lbl[c], LV_LABEL_LONG_CLIP);
     }
 
@@ -816,8 +803,14 @@ void activity_detail_page_create(lv_obj_t *parent)
         lv_table_set_col_width(s_tbl, c, s_col_w[c]);
     }
 
-    lv_obj_set_style_pad_all(s_tbl, 5, LV_PART_ITEMS);
+    lv_obj_set_style_pad_hor(s_tbl, 2, LV_PART_ITEMS);
+    lv_obj_set_style_pad_ver(s_tbl, 6, LV_PART_ITEMS);
     lv_obj_set_style_text_align(s_tbl, LV_TEXT_ALIGN_CENTER, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(s_tbl, &lv_font_montserrat_20, LV_PART_ITEMS);
+    lv_obj_set_style_border_width(s_tbl, 1, LV_PART_ITEMS);
+    lv_obj_set_style_border_side(s_tbl, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS);
+    lv_obj_set_style_border_color(s_tbl, ui_theme_palette()->border, LV_PART_ITEMS);
+    lv_obj_set_style_border_opa(s_tbl, LV_OPA_40, LV_PART_ITEMS);
 
     /* Explicit item background so the FILL draw task is always emitted */
     lv_obj_set_style_bg_opa(s_tbl, LV_OPA_COVER, LV_PART_ITEMS);
@@ -861,9 +854,12 @@ void activity_detail_page_apply_theme(void)
         ui_theme_apply_button(s_btn_next);
     if (s_page_lbl)
         ui_theme_apply_label(s_page_lbl, true);
-    /* Re-apply base cell background colour to match the new theme surface */
-    if (s_tbl)
+    if (s_name_lbl)
+        ui_theme_apply_label(s_name_lbl, false);
+    if (s_tbl) {
         lv_obj_set_style_bg_color(s_tbl, ui_theme_palette()->surface, LV_PART_ITEMS);
+        lv_obj_set_style_border_color(s_tbl, ui_theme_palette()->border, LV_PART_ITEMS);
+    }
 }
 
 void activity_detail_page_on_orientation_changed(void)

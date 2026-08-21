@@ -17,7 +17,7 @@
 extern sd_mmc_helper_t s_sd;
 extern QueueHandle_t s_act_q;
 extern TaskHandle_t s_act_worker_task;
-extern bool s_activity_recording;
+extern volatile bool s_activity_recording;
 extern activity_t s_activity;
 extern uint32_t s_activity_next_id;
 extern float s_session_time_s;

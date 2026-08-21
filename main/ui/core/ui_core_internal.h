@@ -2,6 +2,7 @@
 
 #include "ui.h"
 #include "lvgl.h"
+#include "ui_status_bar.h"
 #include <stdbool.h>
 
 extern lv_disp_t *ui_s_disp;
@@ -13,12 +14,17 @@ extern lv_obj_t *ui_s_page_activity_summary;
 extern lv_obj_t *ui_s_page_activity_detail;
 extern lv_obj_t *ui_s_page_interval_setup;
 extern lv_obj_t *ui_s_page_interval_data;
+extern lv_obj_t *ui_s_page_race_setup;
+extern lv_obj_t *ui_s_page_race_data;
+extern lv_obj_t *ui_s_page_step_setup;
+extern lv_obj_t *ui_s_page_sensors;
 
 extern lv_obj_t *ui_s_top_gesture;
 extern lv_obj_t *ui_s_settings_bottom_gesture;
 extern lv_obj_t *ui_s_menu_bottom_gesture;
 extern lv_obj_t *ui_s_activity_sum_bottom_gesture;
 extern lv_obj_t *ui_s_activity_detail_bottom_gesture;
+extern lv_obj_t *ui_s_sensors_bottom_gesture;
 extern lv_obj_t *ui_s_data_right_gesture;
 extern lv_obj_t *ui_s_interval_left_gesture;
 
@@ -26,6 +32,9 @@ extern ui_page_t ui_s_current_page;
 extern bool ui_s_transitioning;
 extern bool ui_s_interval_start_armed;
 extern bool ui_s_interval_data_visible;
+extern bool ui_s_race_start_armed;
+extern bool ui_s_race_data_visible;
+extern bool ui_s_step_start_armed;
 extern volatile bool ui_s_modal_active;
 
 extern bool ui_s_top_swipe_armed;
@@ -42,6 +51,9 @@ extern lv_point_t ui_s_act_sum_swipe_sum;
 
 extern bool ui_s_act_detail_swipe_armed;
 extern lv_point_t ui_s_act_detail_swipe_sum;
+
+extern bool ui_s_overlay_swipe_armed;
+extern lv_point_t ui_s_overlay_swipe_sum;
 
 extern bool ui_s_data_right_swipe_armed;
 extern lv_point_t ui_s_data_right_swipe_sum;
@@ -69,16 +81,23 @@ extern char ui_s_stop_save_prompt_msg[64];
 extern ui_dark_mode_cb_t ui_s_dark_mode_cb;
 extern ui_auto_rotate_cb_t ui_s_auto_rotate_cb;
 extern bool ui_s_dark_mode;
+extern volatile bool ui_s_touch_locked;
+extern ui_status_bar_t ui_s_live_status;
 
 void ui_pages_relayout(void);
 void ui_relayout_dialogs(void);
 void create_pages_ui(void);
 void ensure_interval_setup_page(void);
+void ensure_race_setup_page(void);
+void ensure_race_data_page(void);
+void ensure_step_setup_page(void);
+void ensure_sensors_page(void);
 
 void top_swipe_event_cb(lv_event_t *e);
 void settings_bottom_swipe_event_cb(lv_event_t *e);
 void menu_bottom_swipe_event_cb(lv_event_t *e);
 void activity_summary_bottom_swipe_event_cb(lv_event_t *e);
 void activity_detail_bottom_swipe_event_cb(lv_event_t *e);
+void overlay_bottom_swipe_event_cb(lv_event_t *e);
 void data_right_swipe_event_cb(lv_event_t *e);
 void interval_left_swipe_event_cb(lv_event_t *e);

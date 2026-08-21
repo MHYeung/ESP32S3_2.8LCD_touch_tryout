@@ -347,6 +347,7 @@ static void build_list_ui(void)
         lv_obj_clear_flag(dist_lbl, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_clear_flag(dur_lbl, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_clear_flag(date_lbl, LV_OBJ_FLAG_SCROLLABLE);
+        ui_yield_for_idle();
     }
 
     update_nav_controls();
@@ -354,10 +355,12 @@ static void build_list_ui(void)
 
 void activity_summary_page_refresh(void)
 {
+    ui_yield_for_idle();
     bool ok = load_index_file();
     if (!ok)
         s_item_count = 0;
     s_page_index = 0;
+    ui_yield_for_idle();
     build_list_ui();
 }
 

@@ -3,14 +3,15 @@
 #include "freertos/semphr.h"
 #include "driver/uart.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
-#include <assert.h>
 
 #include "activity.h"
 #include "activity_log.h"
 #include "gps_gtu8.h"
 #include "nvs_helper.h"
+#include "sensor_hub.h"
 #include "rtc_pcf85063.h"
 #include "sd_mmc_helper.h"
 
@@ -37,6 +38,7 @@ void app_main(void)
     init_imu();
     PCF85063_init(&s_imu_bus);
     ESP_ERROR_CHECK(nvs_helper_init());
+    ESP_ERROR_CHECK(sensor_hub_init());
 
     gps_gtu8_config_t gps_cfg = {
         .uart_num = UART_NUM_1,
@@ -51,17 +53,34 @@ void app_main(void)
     ESP_ERROR_CHECK(gps_gtu8_set_callback(gps_fix_cb, NULL));
 
     app_set_time_from_rtc();
-    app_pwr_key_setup();
+
+    /* Activity queue must exist before pwr_key_task can post START/STOP.
+     * ui_init() is heavy; a PWR press during it used to hit xQueueSend(NULL). */
+    s_activity_mutex = xSemaphoreCreateMutex();
+    activity_init(&s_activity, 0);
+    s_session_time_s = 0.0f;
+    s_session_last_us = esp_timer_get_time();
+
+    s_act_q = xQueueCreate(4, sizeof(act_cmd_t));
+    ESP_ERROR_CHECK(s_act_q ? ESP_OK : ESP_ERR_NO_MEM);
+    s_log_q = xQueueCreate(LOG_QUEUE_LEN, sizeof(activity_log_msg_t));
+    ESP_ERROR_CHECK(s_log_q ? ESP_OK : ESP_ERR_NO_MEM);
+
+    xTaskCreate(activity_logger_task, "activity_logger", 6144, NULL, 6, NULL);
+    xTaskCreate(activity_worker_task, "activity_worker", 8192, NULL, 9, &s_act_worker_task);
 
     /* Create UI in separate module */
     ui_init(s_disp);
 
-    /* Default Data page metrics for rowing */
-    const data_metric_t metrics[3] = {
-        DATA_METRIC_TIME,
-        DATA_METRIC_STROKE_COUNT,
-        DATA_METRIC_SPM,
-    };
+    /* Default Data page metrics: pace / SPM / distance (NVS override) */
+    uint8_t saved_slots[3];
+    nvs_helper_get_data_metrics(saved_slots);
+    data_metric_t metrics[3];
+    for (int i = 0; i < 3; i++) {
+        metrics[i] = (saved_slots[i] < DATA_METRIC_COUNT)
+                         ? (data_metric_t)saved_slots[i]
+                         : DATA_METRIC_PACE;
+    }
     data_page_set_metrics(metrics, 3);
 
     esp_err_t sd_err = sd_mmc_helper_mount(&s_sd, "/sdcard");
@@ -85,21 +104,23 @@ void app_main(void)
     ui_register_stop_save_confirm_cb(on_stop_save_confirmed);
     ui_settings_register_split_length_cb(on_split_interval_changed);
 
-    s_activity_mutex = xSemaphoreCreateMutex();
-    activity_init(&s_activity, 0);
-    s_session_time_s = 0.0f;
-    s_session_last_us = esp_timer_get_time();
+    app_pwr_key_setup();
 
-    s_act_q = xQueueCreate(4, sizeof(act_cmd_t));
-    assert(s_act_q);
-
-    s_log_q = xQueueCreate(LOG_QUEUE_LEN, sizeof(activity_log_msg_t));
-    assert(s_log_q);
-
-    xTaskCreate(activity_logger_task, "activity_logger", 6144, NULL, 6, NULL);
-    xTaskCreate(activity_worker_task, "activity_worker", 8192, NULL, 9, &s_act_worker_task);
-    xTaskCreatePinnedToCore(stroke_task, "stroke",
-                            6144, NULL, 3, NULL, 0);
+    /* Created last, so it competes for whatever internal DRAM is left after
+     * LVGL/SD/BLE. A silent pdFAIL here kills SPM with no other symptom. */
+    BaseType_t stroke_ok = xTaskCreatePinnedToCore(stroke_task, "stroke",
+                                                   6144, NULL, 3, NULL, 0);
+    if (stroke_ok != pdPASS)
+    {
+        ESP_LOGE(TAG, "stroke task create FAILED, free internal=%u largest=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    }
+    else
+    {
+        ESP_LOGI(TAG, "stroke task started, free internal=%u",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    }
 
     /* app_main can idle */
     while (1)

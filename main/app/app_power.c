@@ -22,29 +22,60 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
 
     switch (evt)
     {
+    case PWR_KEY_EVT_SHORT_PRESS:
+        ui_toggle_display_sleep();
+        break;
+
     case PWR_KEY_EVT_ACTIVITY_TOGGLE:
     {
-        ui_page_t p = ui_get_current_page();
-        if (p != UI_PAGE_DATA && p != UI_INTERVAL_DATA_PAGE)
+        if (ui_is_display_sleep())
         {
-            ESP_LOGI(TAG, "PWR toggle ignored (page=%d)", (int)p);
+            ui_set_display_sleep(false);
             break;
         }
+        ui_notify_user_activity();
+
+        ui_page_t p = ui_get_current_page();
+        bool race_armed = ui_take_race_start_armed();
+        bool step_armed = ui_take_step_start_armed();
+        bool interval_armed = ui_take_interval_start_armed();
+        bool on_live = (p == UI_PAGE_DATA ||
+                        p == UI_INTERVAL_DATA_PAGE ||
+                        p == UI_RACE_DATA_PAGE);
 
         if (!s_activity_recording)
         {
             act_cmd_t cmd = ACT_CMD_START;
-            if (ui_take_interval_start_armed())
+            if (race_armed || p == UI_RACE_DATA_PAGE)
+                cmd = ACT_CMD_START_RACE;
+            else if (step_armed)
+                cmd = ACT_CMD_START_INTERVAL_STEP;
+            else if (interval_armed || p == UI_INTERVAL_DATA_PAGE)
                 cmd = ACT_CMD_START_INTERVAL_NORMAL;
+            else if (p != UI_PAGE_DATA)
+            {
+                ESP_LOGI(TAG, "PWR toggle ignored (page=%d)", (int)p);
+                break;
+            }
 
-            xQueueSend(s_act_q, &cmd, 0);
+            esp_err_t err = app_activity_post_cmd(cmd);
+            if (err != ESP_OK)
+                ESP_LOGW(TAG, "start post: %s", esp_err_to_name(err));
+        }
+        else if (!on_live)
+        {
+            ESP_LOGI(TAG, "PWR toggle ignored (page=%d)", (int)p);
+            break;
         }
         else
         {
-            // Recording -> ask user
             if (p == UI_INTERVAL_DATA_PAGE)
             {
                 ui_show_stop_save_prompt_with_text("Finish interval and save?");
+            }
+            else if (p == UI_RACE_DATA_PAGE)
+            {
+                ui_show_stop_save_prompt_with_text("Finish race and save?");
             }
             else
             {
@@ -60,9 +91,7 @@ static void pwr_evt_cb(pwr_key_event_t evt, void *user)
         ESP_LOGI(TAG, "Long press 5s: show shutdown prompt");
         break;
 
-    case PWR_KEY_EVT_SHORT_PRESS:
     default:
-        // optional: ignore short press for now
         break;
     }
 }
@@ -78,7 +107,7 @@ void app_pwr_key_setup(void)
         .poll_ms = 20,
         .click_max_ms = 600,
         //.toggle_hold_ms = 1600,
-        .prompt_hold_ms = 2000,
+        .prompt_hold_ms = 5000,
     };
     ESP_ERROR_CHECK(pwr_key_init(&cfg, pwr_evt_cb, NULL));
 

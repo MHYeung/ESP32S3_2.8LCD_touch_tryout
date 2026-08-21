@@ -2,6 +2,7 @@
 
 #include "lvgl.h"
 #include <stdbool.h>
+#include <stdint.h>
 
 void ui_init(lv_disp_t *disp);
 
@@ -22,6 +23,10 @@ typedef enum {
     UI_SETTINGS_PAGE,
 
     UI_ACTIVITY_DETAIL_PAGE,
+    UI_RACE_SETUP_PAGE,
+    UI_RACE_DATA_PAGE,
+    UI_STEP_SETUP_PAGE,
+    UI_SENSORS_PAGE,
     UI_PAGE_COUNT,
 } ui_page_t;
 
@@ -42,16 +47,24 @@ bool ui_is_modal_active(void);
 
 void ui_set_orientation(ui_orientation_t o);
 void ui_go_to_page(ui_page_t page, bool animated);
+/* Navigate on the next LVGL tick so the click handler can return and IDLE0 can pet the WDT. */
+void ui_defer_go_to_page(ui_page_t page);
+/* Yield so IDLE0 can run during heavy widget construction on the LVGL task. */
+void ui_yield_for_idle(void);
 
 // Interval start arming (set by interval setup confirm)
 void ui_set_interval_start_armed(bool armed);
 bool ui_take_interval_start_armed(void);
 void ui_set_interval_data_visible(bool visible);
 
-// Race start arming (set by interval setup confirm)
+// Race start arming (set by race setup confirm)
 void ui_set_race_start_armed(bool armed);
 bool ui_take_race_start_armed(void);
 void ui_set_race_data_visible(bool visible);
+
+// Step-test start arming (set by step setup confirm; reuses interval live page)
+void ui_set_step_start_armed(bool armed);
+bool ui_take_step_start_armed(void);
 
 
 /* Theme helpers (currently implemented as light/dark). */
@@ -67,5 +80,21 @@ void ui_register_auto_rotate_cb(ui_auto_rotate_cb_t cb);
 /* NEW: internal helpers that per-page code can call */
 void ui_notify_dark_mode_changed(bool enabled);
 void ui_notify_auto_rotate_changed(bool enabled);
+
+/* Water/touch lock on live screens. Physical PWR still starts/stops. */
+void ui_set_touch_lock(bool locked);
+bool ui_is_touch_lock(void);
+void ui_toggle_touch_lock(void);
+
+void ui_set_brightness_percent(uint8_t percent);
+uint8_t ui_get_brightness_percent(void);
+void ui_set_auto_dim(bool enabled);
+bool ui_get_auto_dim(void);
+
+void ui_set_display_sleep(bool sleep);
+void ui_toggle_display_sleep(void);
+bool ui_is_display_sleep(void);
+/* Hardware PWR is not an LVGL indev; call this so auto-dim / sleep stay in sync. */
+void ui_notify_user_activity(void);
 
 

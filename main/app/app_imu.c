@@ -3,22 +3,38 @@
 #include "app_activity.h"
 #include "app_context.h"
 #include "app_pins.h"
+#include "coach_ui_snapshot.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "gps_gtu8.h"
 #include "interval_program.h"
 #include "math.h"
+#include "race_program.h"
 #include "ui.h"
-#include "ui_data_page.h"
 #include "ui_interval_data_page.h"
-#include "ui_status_bar.h"
-#include <time.h>
-#include <string.h>
 #include "qmi8658.h"
 #include "stroke_detection.h"
 
+#include <time.h>
+#include <string.h>
+
 static const char *TAG = "app";
+static volatile bool s_session_reset = false;
+static uint32_t s_ui_seq = 0;
+
+/* Stroke period window, shared by the detector config and the SPM sanity gate
+ * so a catch can never be accepted at a spacing the SPM filter rejects.
+ * 0.6 s = 100 SPM, 6.0 s = 10 SPM. */
+#define STROKE_MIN_PERIOD_S 0.6f
+#define STROKE_MAX_PERIOD_S 6.0f
+#define STROKE_SPM_MIN (60.0f / STROKE_MAX_PERIOD_S)
+#define STROKE_SPM_MAX (60.0f / STROKE_MIN_PERIOD_S)
+
+void app_imu_request_session_reset(void)
+{
+    s_session_reset = true;
+}
 
 static const char *interval_unit_to_csv(interval_unit_t unit)
 {
@@ -136,9 +152,11 @@ void stroke_task(void *arg)
     static float s_gps_speed_filt = NAN;
     static double s_gps_lat = NAN;
     static double s_gps_lon = NAN;
-    static float s_total_distance = NAN;
+    static float s_split_anchor_m = 0.0f;
+    static float s_split_anchor_t = 0.0f;
+    static float s_last_split_pace = NAN;
+    static float s_last_split_delta = NAN;
 
-    static bool s_last_recording_ui = false;
     static bool s_interval_prev_recording = false;
     static bool s_interval_phase_active = false;
     static interval_phase_t s_interval_log_phase = INTERVAL_PHASE_IDLE;
@@ -149,7 +167,12 @@ void stroke_task(void *arg)
     static bool s_interval_cfg_valid = false;
     static interval_config_t s_interval_log_cfg = {0};
 
-    const float fs_hz = 200.0f;
+    /* Must stay an exact multiple of the FreeRTOS tick (10 ms @ 100 Hz), or the
+     * pacing delay truncates to 0 and the loop free-runs at the I2C rate while
+     * the detector's filter coefficients still assume fs_hz. */
+    const float fs_hz = 100.0f;
+    const TickType_t sample_delay = pdMS_TO_TICKS((int)(1000.0f / fs_hz));
+    _Static_assert(pdMS_TO_TICKS(10) >= 1, "tick rate too low to pace the IMU loop");
     const stroke_detection_cfg_t cfg = {
         .fs_hz = fs_hz,
 
@@ -157,24 +180,24 @@ void stroke_task(void *arg)
         .gravity_tau_s = 1.0f, // Was 0.8f
 
         // Axis detection: Hull acceleration is linear, so we hold the decision longer
-        .axis_window_s = 4.0f,
-        .axis_hold_s = 1.0f,          // Was 0.5f - reduces switching noise
-        .accel_use_fixed_axis = true, // Keep true if you know the mounting orientation
-        .accel_fixed_axis = 2,        // Ensure this matches your physical mount (2 = Z-axis usually)
+        .axis_window_s = 2.0f,
+        .axis_hold_s = 1.0f,
+        /* Auto-select the highest-variance axis: the deck mount can put surge on
+         * X, Y or Z, and a fixed axis goes deaf to motion in the other two. */
+        .accel_use_fixed_axis = false,
+        .accel_fixed_axis = 2,
 
-        // FILTERS: pass the slow rhythmic rowing surge (0.5-1.0 Hz), cut bus vibration.
-        .hpf_hz = 0.1f,  // pass very slow drive start
-        .lpf_hz = 2.0f,  // tightened from 3.0 Hz to cut more high-freq bus vibration
+        .hpf_hz = 0.1f,
+        .lpf_hz = 3.0f,
 
-        // TIMING:
-        .min_stroke_period_s = 0.9f, // ~66 SPM max
-        .max_stroke_period_s = 6.0f, // 10 SPM min
-        .min_catch_interval_s = 0.75f, // tightened debounce (was 0.55s) — rejects rapid bus bumps
+        /* Debounce must not be looser than the period window, or a catch can be
+         * accepted at a spacing that the SPM window then throws away. */
+        .min_stroke_period_s = STROKE_MIN_PERIOD_S,
+        .max_stroke_period_s = STROKE_MAX_PERIOD_S,
+        .min_catch_interval_s = STROKE_MIN_PERIOD_S,
 
-        // THRESHOLDS: raised to ignore bus/hand shake (~0.05-0.3g) while catching real rowing strokes.
-        // Real rowing catch on a hull: 0.5-2g; bus shake: <0.3g (~2.9 m/s²).
-        .thr_k = 2.5f,    // was 1.6 — need signal much larger than noise floor
-        .thr_floor = 1.8f, // was 0.55 (~0.056g); now ~0.18g — filters casual shaking
+        .thr_k = 1.8f,
+        .thr_floor = 1.2f, /* ~0.12 g: above resting noise, below a real catch */
     };
 
     stroke_detection_init(&s_stroke, &cfg);
@@ -185,8 +208,8 @@ void stroke_task(void *arg)
     float s_last_valid_spm = NAN;
     float s_last_spm_t_s = -1.0f;
 
-    const TickType_t sample_delay = pdMS_TO_TICKS((int)(1000.0f / fs_hz));
     const TickType_t ui_period = pdMS_TO_TICKS(100); // 10Hz
+    TickType_t last_wake = xTaskGetTickCount();
     TickType_t last_ui_tick = xTaskGetTickCount();
 
     ui_orientation_t last_orient = s_current_orient;
@@ -194,6 +217,18 @@ void stroke_task(void *arg)
 
     while (1)
     {
+        if (s_session_reset)
+        {
+            s_session_reset = false;
+            s_gps_speed_filt = NAN;
+            s_gps_lat = NAN;
+            s_gps_lon = NAN;
+            s_split_anchor_m = 0.0f;
+            s_split_anchor_t = 0.0f;
+            s_last_split_pace = NAN;
+            s_last_split_delta = NAN;
+        }
+
         float ax, ay, az, gx, gy, gz;
         if (qmi8658_read_accel_gyro(&s_imu, &ax, &ay, &az, &gx, &gy, &gz) == ESP_OK)
         {
@@ -211,8 +246,9 @@ void stroke_task(void *arg)
 
             if (ev != STROKE_EVENT_NONE)
             {
-                ESP_LOGI("STROKE", "ev=%d count=%lu spm=%.1f period=%.2fs",
-                         (int)ev, (unsigned long)m.stroke_count, (double)m.spm, (double)m.stroke_period_s);
+                ESP_LOGI("STROKE", "ev=%d count=%lu spm=%.1f period=%.2fs axis=%d",
+                         (int)ev, (unsigned long)m.stroke_count, (double)m.spm,
+                         (double)m.stroke_period_s, s_stroke.best_axis);
             }
 
             // Orientation Logic
@@ -236,7 +272,7 @@ void stroke_task(void *arg)
                 }
             }
 
-            if (isfinite(m.spm) && m.spm >= 10.0f && m.spm <= 80.0f)
+            if (isfinite(m.spm) && m.spm >= STROKE_SPM_MIN && m.spm <= STROKE_SPM_MAX)
             {
                 s_last_valid_spm = m.spm;
                 s_last_spm_t_s = t_s;
@@ -280,12 +316,11 @@ void stroke_task(void *arg)
                 }
 
                 // your gps_ok logic can stay stricter:
-                if (gps_connected && fix.valid_fix && isfinite(fix.speed_mps))
+                    if (gps_connected && fix.valid_fix && isfinite(fix.speed_mps))
                 {
                     gps_ok = true;
                     s_gps_lat = fix.lat_deg;
                     s_gps_lon = fix.lon_deg;
-                    s_total_distance += fix.speed_mps * dt_s;
 
                     const float tau = 2.2f;
                     float alpha = dt_s / (tau + dt_s);
@@ -299,16 +334,6 @@ void stroke_task(void *arg)
             {
                 gps_connected = false;
                 gps_bars = 0;
-            }
-
-            // Always update UI on change
-            static bool last_conn = false;
-            static uint8_t last_bars = 255;
-            if (gps_connected != last_conn || gps_bars != last_bars)
-            {
-                ui_status_bar_set_gps_default_safe(gps_connected, gps_bars);
-                last_conn = gps_connected;
-                last_bars = gps_bars;
             }
 
             float speed_mps = gps_ok ? s_gps_speed_filt : 0.0f;
@@ -345,7 +370,10 @@ void stroke_task(void *arg)
 
             if (s_activity_recording)
             {
-                s_session_time_s += dt_s;
+                s_session_time_s = (s_session_last_us > 0)
+                    ? (float)(esp_timer_get_time() - s_session_last_us) * 1e-6f
+                    : 0.0f;
+                s_activity.duration_ms = (uint32_t)(s_session_time_s * 1000.0f);
 
                 uint32_t stroke_delta = (ev == STROKE_EVENT_CATCH) ? 1 : 0;
 
@@ -356,7 +384,9 @@ void stroke_task(void *arg)
                                 spm_raw,
                                 0.0f, // Power placeholder
                                 dist_delta_m,
-                                stroke_delta);
+                                stroke_delta,
+                                gps_ok,
+                                (isfinite(s_last_valid_spm) && (t_s - s_last_spm_t_s) <= 12.0f));
 
                 bool is_interval = activity_type_is_interval(s_activity.activity_type);
                 if (is_interval && !interval_was_recording)
@@ -370,7 +400,7 @@ void stroke_task(void *arg)
 
                 interval_ui_state_t ist = {0};
                 bool interval_ui_valid = false;
-                if (s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
+                if (is_interval)
                 {
                     uint32_t t_ms = (uint32_t)(s_session_time_s * 1000.0f);
                     interval_program_update(true, t_ms, s_activity.distance_m, s_activity.stroke_count);
@@ -380,6 +410,19 @@ void stroke_task(void *arg)
                     {
                         s_interval_done_queued = true;
                         interval_data_page_show_complete_prompt();
+                        act_cmd_t done_cmd = ACT_CMD_STOP_SAVE;
+                        xQueueSend(s_act_q, &done_cmd, 0);
+                    }
+                }
+
+                race_ui_state_t rst = {0};
+                if (s_activity.activity_type == ACTIVITY_RACE)
+                {
+                    race_program_update(true, s_session_time_s, s_activity.distance_m, s_activity.avg_speed_mps);
+                    race_program_get_ui(&rst);
+                    if (!s_interval_done_queued && rst.finished)
+                    {
+                        s_interval_done_queued = true;
                         act_cmd_t done_cmd = ACT_CMD_STOP_SAVE;
                         xQueueSend(s_act_q, &done_cmd, 0);
                     }
@@ -446,9 +489,29 @@ void stroke_task(void *arg)
                 // Calculate Avg Pace from Session Avg Speed
                 float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : 0.0f;
 
+                if (s_current_split_m > 0)
+                {
+                    while ((s_activity.distance_m - s_split_anchor_m) >= (float)s_current_split_m)
+                    {
+                        float dt_split = s_session_time_s - s_split_anchor_t;
+                        float split_pace = ((float)s_current_split_m > 0.1f)
+                                               ? (dt_split / ((float)s_current_split_m / 500.0f))
+                                               : NAN;
+                        s_last_split_delta = (isfinite(avg_pace_s) && avg_pace_s > 0.1f && isfinite(split_pace))
+                                                 ? (split_pace - avg_pace_s)
+                                                 : NAN;
+                        s_last_split_pace = split_pace;
+                        s_split_anchor_m += (float)s_current_split_m;
+                        s_split_anchor_t = s_session_time_s;
+                    }
+                }
+
                 // Only log on CATCH
                 if (ev == STROKE_EVENT_CATCH)
                 {
+                    ESP_LOGI(TAG, "CATCH n=%lu spm=%.1f axis=%d a=%.2f",
+                             (unsigned long)s_stroke.stroke_count,
+                             (double)m.spm, s_stroke.best_axis, (double)m.a_long_f);
 
                     // --- Populate the 16-Column Row ---
 
@@ -508,7 +571,6 @@ void stroke_task(void *arg)
                     s_interval_log_round = 0;
                 }
                 s_interval_cfg_valid = false;
-                s_session_time_s = 0.0f;
             }
 
             if (s_activity_mutex)
@@ -532,63 +594,104 @@ void stroke_task(void *arg)
             bool recording = s_activity_recording;
             s_interval_prev_recording = s_activity_recording;
 
-            // UI Update
-            if (!ui_is_modal_active())
+            TickType_t now = xTaskGetTickCount();
+            bool catch_ui = (ev == STROKE_EVENT_CATCH);
+            if (!ui_is_modal_active() &&
+                (catch_ui || (now - last_ui_tick) >= ui_period))
             {
-                // 1) Time only @ 10Hz
-                TickType_t now = xTaskGetTickCount();
-                if ((now - last_ui_tick) >= ui_period)
-                {
-                    last_ui_tick = now;
-                    data_page_set_time_s(recording ? s_session_time_s : NAN);
-                }
-                // 2) Non-time metrics only on stroke count OR state change
-                bool force_full_redraw = (recording != s_last_recording_ui);
-                if (force_full_redraw)
-                {
-                    s_last_recording_ui = recording;
-                }
-                if (force_full_redraw || ev == STROKE_EVENT_CATCH)
-                {
-                    float spm_raw_ui = s_last_valid_spm;
-                    if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f)
-                        spm_raw_ui = NAN;
+                last_ui_tick = now;
 
-                    float spm_disp = spm_raw_ui;
-                    if (isfinite(spm_disp))
-                        spm_disp = ceilf(spm_disp * 2.0f) / 2.0f;
+                float spm_raw_ui = s_last_valid_spm;
+                if (s_last_spm_t_s > 0.0f && (t_s - s_last_spm_t_s) > 12.0f)
+                    spm_raw_ui = NAN;
+                float spm_disp = spm_raw_ui;
+                if (isfinite(spm_disp))
+                    spm_disp = ceilf(spm_disp * 2.0f) / 2.0f;
 
-                    float pace = (speed_mps > 0.2f) ? (500.0f / speed_mps) : NAN;
-                    float avg_pace_s = (s_activity.avg_speed_mps > 0.1f) ? (500.0f / s_activity.avg_speed_mps) : NAN;
-
+                float pace = (speed_mps > 0.2f) ? (500.0f / speed_mps) : NAN;
+                float avg_pace_s = (recording && s_activity.avg_speed_mps > 0.1f)
+                                       ? (500.0f / s_activity.avg_speed_mps)
+                                       : NAN;
                 float stroke_len_disp = NAN;
                 if (recording && stroke_len_m > 0.01f)
                     stroke_len_disp = stroke_len_m;
 
-                data_values_t v = {
+                interval_ui_state_t ist = {0};
+                bool interval_active = false;
+                if (recording && activity_type_is_interval(s_activity.activity_type))
+                {
+                    interval_program_get_ui(&ist);
+                    interval_active = ist.active;
+                }
+
+                race_ui_state_t rst = {0};
+                if (recording && s_activity.activity_type == ACTIVITY_RACE)
+                {
+                    race_program_get_ui(&rst);
+                }
+
+                uint8_t target_spm = recording ? interval_program_target_spm() : 0;
+
+                coach_ui_snapshot_t snap = {
+                    .seq = ++s_ui_seq,
+                    .recording = recording,
+                    .touch_locked = ui_is_touch_lock(),
+                    .gps_connected = gps_connected,
+                    .gps_ok = gps_ok,
+                    .gps_stale = gps_connected && !gps_ok,
+                    .gps_bars = gps_bars,
+                    .battery_pct = 255,
                     .time_s = recording ? s_session_time_s : NAN,
                     .distance_m = recording ? s_activity.distance_m : NAN,
                     .pace_s_per_500m = recording ? pace : NAN,
                     .avg_pace_s_per_500m = recording ? avg_pace_s : NAN,
                     .speed_mps = recording ? speed_mps : NAN,
-                    .spm = spm_disp,   /* show live SPM even when not recording */
+                    .spm = spm_disp,
                     .stroke_len_m = stroke_len_disp,
                     .stroke_count = recording ? s_activity.stroke_count : UINT32_MAX,
+                    .activity_type = s_activity.activity_type,
+                    .split_len_m = s_current_split_m,
+                    .split_progress_m = recording ? (s_activity.distance_m - s_split_anchor_m) : NAN,
+                    .last_split_pace_s = recording ? s_last_split_pace : NAN,
+                    .last_split_delta_s = recording ? s_last_split_delta : NAN,
+                    .interval_active = interval_active,
+                    .interval_phase = ist.phase,
+                    .interval_unit = ist.unit,
+                    .interval_remaining = ist.remaining,
+                    .round_idx = ist.round_idx,
+                    .rounds = ist.rounds,
+                    .target_spm = target_spm,
+                    .race_active = rst.active,
+                    .race_finished = rst.finished,
+                    .race_delta_s = rst.delta_s,
+                    .race_remaining_m = rst.remaining_m,
+                    .race_projected_s = rst.projected_finish_s,
                 };
-                    data_page_set_values(&v);
-                    if (recording && s_activity.activity_type == ACTIVITY_INTERVAL_NORMAL)
-                    {
-                        interval_data_page_set_pace_s_per_500m(pace);
-                        interval_data_page_set_spm(spm_disp);
-                    }
-                    else
-                    {
-                        interval_data_page_set_pace_s_per_500m(NAN);
-                        interval_data_page_set_spm(NAN);
-                    }
-                }
+                coach_ui_snapshot_publish(&snap);
             }
         }
-        vTaskDelay(sample_delay);
+        else
+        {
+            static uint32_t s_imu_fail;
+            s_imu_fail++;
+            if ((s_imu_fail % 50u) == 1u) {
+                ESP_LOGW(TAG, "IMU read failed (%lu)", (unsigned long)s_imu_fail);
+                (void)i2c_helper_bus_reset(&s_imu_bus);
+            }
+        }
+
+        {
+            static TickType_t last_hb;
+            TickType_t hb_now = xTaskGetTickCount();
+            if ((hb_now - last_hb) >= pdMS_TO_TICKS(1000)) {
+                last_hb = hb_now;
+                ESP_LOGI("STROKE", "surge=%.2f thr=%.2f axis=%d phase=%d n=%lu spm=%.1f rec=%d",
+                         (double)s_stroke.last_s0, (double)s_stroke.last_thr,
+                         s_stroke.best_axis, s_stroke.phase,
+                         (unsigned long)s_stroke.stroke_count,
+                         (double)s_last_valid_spm, (int)s_activity_recording);
+            }
+        }
+        xTaskDelayUntil(&last_wake, sample_delay);
     }
 }

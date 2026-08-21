@@ -1,6 +1,22 @@
 #include "i2c_helper.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+#include <string.h>
+
 static const char *TAG = "i2c_helper";
+#define I2C_XFER_TIMEOUT_MS 20
+#define I2C_LOCK_TIMEOUT_MS 20
+
+static SemaphoreHandle_t s_xfer_lock;
+
+static SemaphoreHandle_t xfer_lock(void)
+{
+    if (!s_xfer_lock)
+        s_xfer_lock = xSemaphoreCreateMutex();
+    return s_xfer_lock;
+}
 
 esp_err_t i2c_helper_init(i2c_helper_t *ctx,
                           int port,
@@ -12,9 +28,9 @@ esp_err_t i2c_helper_init(i2c_helper_t *ctx,
         return ESP_ERR_INVALID_ARG;
 
     i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = port,
-        .scl_io_num = scl_gpio,
-        .sda_io_num = sda_gpio,
+        .i2c_port = (i2c_port_num_t)port,
+        .scl_io_num = (gpio_num_t)scl_gpio,
+        .sda_io_num = (gpio_num_t)sda_gpio,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .flags = {
             .enable_internal_pullup = true,
@@ -29,6 +45,7 @@ esp_err_t i2c_helper_init(i2c_helper_t *ctx,
     }
 
     ctx->clk_hz = clk_hz; // remember the desired speed
+    (void)xfer_lock();
 
     ESP_LOGI(TAG, "I2C bus init OK: port=%d SDA=%d SCL=%d clk=%lu",
              port, sda_gpio, scl_gpio, (unsigned long)clk_hz);
@@ -71,7 +88,13 @@ esp_err_t i2c_helper_write_reg(i2c_master_dev_handle_t dev,
         memcpy(&buf[1], data, len);
     }
 
-    return i2c_master_transmit(dev, buf, 1 + len, -1);
+    SemaphoreHandle_t lock = xfer_lock();
+    if (lock && xSemaphoreTake(lock, pdMS_TO_TICKS(I2C_LOCK_TIMEOUT_MS)) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+    esp_err_t err = i2c_master_transmit(dev, buf, 1 + len, I2C_XFER_TIMEOUT_MS);
+    if (lock)
+        xSemaphoreGive(lock);
+    return err;
 }
 
 esp_err_t i2c_helper_read_reg(i2c_master_dev_handle_t dev,
@@ -79,6 +102,18 @@ esp_err_t i2c_helper_read_reg(i2c_master_dev_handle_t dev,
                               uint8_t *data,
                               size_t len)
 {
-    // write register address, then read
-    return i2c_master_transmit_receive(dev, &reg, 1, data, len, -1);
+    SemaphoreHandle_t lock = xfer_lock();
+    if (lock && xSemaphoreTake(lock, pdMS_TO_TICKS(I2C_LOCK_TIMEOUT_MS)) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+    esp_err_t err = i2c_master_transmit_receive(dev, &reg, 1, data, len, I2C_XFER_TIMEOUT_MS);
+    if (lock)
+        xSemaphoreGive(lock);
+    return err;
+}
+
+esp_err_t i2c_helper_bus_reset(i2c_helper_t *ctx)
+{
+    if (!ctx || !ctx->bus)
+        return ESP_ERR_INVALID_ARG;
+    return i2c_master_bus_reset(ctx->bus);
 }

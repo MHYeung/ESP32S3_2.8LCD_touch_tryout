@@ -1,19 +1,19 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "C:/Espressif/frameworks/esp-idf-v5.5.1/",
-  "idf.pythonInstallPath": "C:\\Espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.espIdfPathWin": "C:/Espressif/.espressif/v6.0.1/esp-idf/",
+  "idf.pythonInstallPath": "C:\\Espressif\\tools\\python\\v6.0.1\\venv\\Scripts\\python.exe",
   "idf.openOcdConfigs": [
     "board/esp32s3-builtin.cfg"
   ],
-  "idf.portWin": "COM10",
-  "idf.toolsPathWin": "C:\\Espressif",
+  "idf.portWin": "COM4",
+  "idf.toolsPathWin": "C:\\Espressif\\tools",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32s3"
   },
-  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-18.1.2_20240912\\esp-clang\\bin\\clangd.exe",
+  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-20.1.1_20250829\\esp-clang\\bin\\clangd.exe",
   "clangd.arguments": [
     "--background-index",
-    "--query-driver=C:\\Espressif\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32-elf-gcc.exe",
+    "--query-driver=C:\\Espressif\\tools\\xtensa-esp-elf\\esp-15.2.0_20251204\\xtensa-esp-elf\\bin\\xtensa-esp32s3-elf-gcc.exe",
     "--compile-commands-dir=${workspaceFolder}\\build"
   ],
   "idf.flashType": "UART",
@@ -23,5 +23,5 @@
     "-f", "board/esp32s3-builtin.cfg",
     "-c", "adapter speed 10000"
   ],
-  "idf.currentSetup": "C:/Espressif/frameworks/esp-idf-v5.5.1/"
+  "idf.currentSetup": "C:\\Espressif\\.espressif\\v6.0.1\\esp-idf"
 }

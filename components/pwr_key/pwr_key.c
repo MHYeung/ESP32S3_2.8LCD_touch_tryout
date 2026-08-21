@@ -76,12 +76,10 @@ static void pwr_key_task(void *arg)
             int64_t held = (press_start_ms >= 0) ? (now_ms - press_start_ms) : 0;
 
             if (!prompt_fired) {
-                // only count as a click if it’s short enough
                 if ((uint32_t)held <= s_cfg.click_max_ms) {
                     if (s_cb) s_cb(PWR_KEY_EVT_ACTIVITY_TOGGLE, s_user);
                 } else {
-                    // optional: ignore (prevents UX bug)
-                    // if (s_cb) s_cb(PWR_KEY_EVT_SHORT_PRESS, s_user);
+                    if (s_cb) s_cb(PWR_KEY_EVT_SHORT_PRESS, s_user);
                 }
             }
 

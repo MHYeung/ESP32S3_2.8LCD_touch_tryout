@@ -32,3 +32,5 @@ esp_err_t i2c_helper_read_reg(i2c_master_dev_handle_t dev,
                               uint8_t reg,
                               uint8_t *data,
                               size_t len);
+
+esp_err_t i2c_helper_bus_reset(i2c_helper_t *ctx);

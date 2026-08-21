@@ -12,12 +12,13 @@
 bool app_usb_msc_is_active(void);
 
 /**
- * Enter USB storage mode: unmount SD, expose as MSC.
- * Fails if recording or SD not mounted. Caller must ensure no activity is recording.
+ * Queue USB storage enter on the USB worker.
+ * Safe from the LVGL thread (does not block on SD/TinyUSB).
  */
-esp_err_t app_usb_msc_enter(void);
+esp_err_t app_usb_msc_request_enter(void);
 
 /**
- * Leave USB storage mode: stop MSC, remount SD.
+ * Queue USB storage leave on the USB worker.
+ * Safe from the LVGL thread.
  */
-esp_err_t app_usb_msc_leave(void);
+esp_err_t app_usb_msc_request_leave(void);

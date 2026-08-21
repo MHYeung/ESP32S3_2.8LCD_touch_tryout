@@ -1,8 +1,8 @@
-// main/ui/ui_data_page.h
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
 #include "ui.h"
+#include "coach_ui_snapshot.h"
 
 typedef enum {
     DATA_METRIC_PACE,
@@ -17,7 +17,7 @@ typedef enum {
 } data_metric_t;
 
 typedef struct {
-    float time_s;          // total elapsed
+    float time_s;
     float distance_m;
     float pace_s_per_500m;
     float avg_pace_s_per_500m;
@@ -29,11 +29,11 @@ typedef struct {
 
 void data_page_create(lv_obj_t *parent);
 void data_page_set_orientation(ui_orientation_t o);
-void data_page_set_metrics(const data_metric_t metrics[], size_t count); // per slot
+void data_page_set_metrics(const data_metric_t metrics[], size_t count);
 
-void data_page_set_time_s(float time_s);
+void data_page_set_time_s(float time_s); /* LVGL thread only */
 void data_page_set_values(const data_values_t *v);
+void data_page_apply_snapshot(const coach_ui_snapshot_t *snap);
 void data_page_apply_theme(void);
 
-// Show a temporary overlay icon (green start / red stop)
 void data_page_show_activity_toast(bool recording);

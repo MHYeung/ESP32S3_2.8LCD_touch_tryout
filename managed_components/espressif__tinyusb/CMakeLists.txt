@@ -1,24 +1,9 @@
 idf_build_get_property(target IDF_TARGET)
-
-if(${target} STREQUAL "esp32s3")
-    set(tusb_mcu "OPT_MCU_ESP32S3")
-    set(tusb_family "esp32sx")
-elseif(${target} STREQUAL "esp32s2")
-    set(tusb_mcu "OPT_MCU_ESP32S2")
-    set(tusb_family "esp32sx")
-elseif(${target} STREQUAL "esp32p4")
-    set(tusb_mcu "OPT_MCU_ESP32P4")
-    set(tusb_family "esp32px")
-elseif(${target} STREQUAL "esp32h4")
-    set(tusb_mcu "OPT_MCU_ESP32H4")
-    set(tusb_family "esp32sx")
-endif()
+string(TOUPPER "OPT_MCU_${target}" tusb_mcu)
 
 set(compile_options
     "-DCFG_TUSB_MCU=${tusb_mcu}"
     )
-
-idf_component_get_property(freertos_include freertos ORIG_INCLUDE_PATH)
 
 set(includes_private
     "src/"
@@ -28,15 +13,16 @@ set(includes_private
 
 set(includes_public
     "src/"
-    # The FreeRTOS API include convention in tinyusb is different from esp-idf
-    "${freertos_include}"
     )
 
 set(srcs
     "src/class/cdc/cdc_device.c"
     "src/class/hid/hid_device.c"
     "src/class/midi/midi_device.c"
+    "src/class/midi/midi2_device.c"
     "src/class/msc/msc_device.c"
+    "src/class/mtp/mtp_device.c"
+    "src/class/printer/printer_device.c"
     "src/class/vendor/vendor_device.c"
     "src/class/audio/audio_device.c"
     "src/class/video/video_device.c"
@@ -53,7 +39,6 @@ set(srcs
     "src/portable/synopsys/dwc2/dcd_dwc2.c"
     "src/portable/synopsys/dwc2/dwc2_common.c"
     "src/common/tusb_fifo.c"
-    "src/device/usbd_control.c"
     "src/device/usbd.c"
     "src/tusb.c"
     )
@@ -72,6 +57,7 @@ idf_component_register(SRCS ${srcs}
                        INCLUDE_DIRS ${includes_public}
                        PRIV_INCLUDE_DIRS ${includes_private}
                        PRIV_REQUIRES  ${requirements_private}
+                       REQUIRES freertos
                        )
 
 target_compile_options(${COMPONENT_LIB} PUBLIC ${compile_options})

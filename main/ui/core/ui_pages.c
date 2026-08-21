@@ -6,8 +6,20 @@
 #include "ui_interval_data_page.h"
 #include "ui_interval_setup_page.h"
 #include "ui_menu_page.h"
+#include "ui_race_data_page.h"
+#include "ui_race_setup_page.h"
 #include "ui_settings_page.h"
+#include "ui_sensors_page.h"
+#include "ui_step_setup_page.h"
 #include "ui_theme.h"
+
+static void live_status_event_cb(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_LONG_PRESSED) {
+        return;
+    }
+    ui_toggle_touch_lock();
+}
 
 void create_pages_ui(void)
 {
@@ -75,6 +87,7 @@ void create_pages_ui(void)
     lv_obj_set_style_bg_opa(ui_s_top_gesture, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ui_s_top_gesture, 0, 0);
     lv_obj_add_event_cb(ui_s_top_gesture, top_swipe_event_cb, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(ui_s_top_gesture, live_status_event_cb, LV_EVENT_LONG_PRESSED, NULL);
 
     // Menu bottom gesture (Data -> Menu)
     ui_s_menu_bottom_gesture = lv_obj_create(ui_s_page_menu);
@@ -130,5 +143,79 @@ void ensure_interval_setup_page(void)
     interval_setup_page_create(ui_s_page_interval_setup);
 
     /* Position the new page correctly (hidden above screen) */
+    ui_pages_relayout();
+}
+
+void ensure_race_setup_page(void)
+{
+    if (ui_s_page_race_setup)
+        return;
+    if (!ui_s_scr)
+        return;
+
+    ui_s_page_race_setup = lv_obj_create(ui_s_scr);
+    lv_obj_set_size(ui_s_page_race_setup, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(ui_s_page_race_setup, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(ui_s_page_race_setup, 0, 0);
+    lv_obj_set_style_border_width(ui_s_page_race_setup, 0, 0);
+    ui_theme_apply_screen(ui_s_page_race_setup);
+    race_setup_page_create(ui_s_page_race_setup);
+    ui_pages_relayout();
+}
+
+void ensure_race_data_page(void)
+{
+    if (ui_s_page_race_data)
+        return;
+    if (!ui_s_scr)
+        return;
+
+    ui_s_page_race_data = lv_obj_create(ui_s_scr);
+    lv_obj_set_size(ui_s_page_race_data, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(ui_s_page_race_data, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(ui_s_page_race_data, 0, 0);
+    lv_obj_set_style_border_width(ui_s_page_race_data, 0, 0);
+    ui_theme_apply_screen(ui_s_page_race_data);
+    race_data_page_create(ui_s_page_race_data);
+    ui_pages_relayout();
+}
+
+void ensure_step_setup_page(void)
+{
+    if (ui_s_page_step_setup)
+        return;
+    if (!ui_s_scr)
+        return;
+
+    ui_s_page_step_setup = lv_obj_create(ui_s_scr);
+    lv_obj_set_size(ui_s_page_step_setup, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(ui_s_page_step_setup, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(ui_s_page_step_setup, 0, 0);
+    lv_obj_set_style_border_width(ui_s_page_step_setup, 0, 0);
+    ui_theme_apply_screen(ui_s_page_step_setup);
+    step_setup_page_create(ui_s_page_step_setup);
+    ui_pages_relayout();
+}
+
+void ensure_sensors_page(void)
+{
+    if (ui_s_page_sensors)
+        return;
+    if (!ui_s_scr)
+        return;
+
+    ui_s_page_sensors = lv_obj_create(ui_s_scr);
+    lv_obj_set_size(ui_s_page_sensors, lv_pct(100), lv_pct(100));
+    lv_obj_clear_flag(ui_s_page_sensors, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(ui_s_page_sensors, 0, 0);
+    lv_obj_set_style_border_width(ui_s_page_sensors, 0, 0);
+    ui_theme_apply_screen(ui_s_page_sensors);
+    sensors_page_create(ui_s_page_sensors);
+
+    ui_s_sensors_bottom_gesture = lv_obj_create(ui_s_page_sensors);
+    lv_obj_set_style_bg_opa(ui_s_sensors_bottom_gesture, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ui_s_sensors_bottom_gesture, 0, 0);
+    lv_obj_add_event_cb(ui_s_sensors_bottom_gesture, overlay_bottom_swipe_event_cb, LV_EVENT_ALL, NULL);
+
     ui_pages_relayout();
 }

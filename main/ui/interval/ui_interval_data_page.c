@@ -2,15 +2,17 @@
 #include "ui_theme.h"
 #include "interval_program.h"
 #include "ui.h"
+#include "ui_format.h"
+#include "ui_typography.h"
+
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
 #include "lvgl.h"
 
 static lv_obj_t *s_root = NULL;
-static lv_timer_t *s_timer = NULL;
-
 static lv_obj_t *s_live = NULL;
+static lv_obj_t *s_rem_box = NULL;
 static lv_obj_t *s_live_rem_val = NULL;
 static lv_obj_t *s_live_round_val = NULL;
 static lv_obj_t *s_live_pace_val = NULL;
@@ -19,8 +21,9 @@ static lv_obj_t *s_live_round_title = NULL;
 static lv_obj_t *s_live_pace_title = NULL;
 static lv_obj_t *s_live_spm_title = NULL;
 static lv_obj_t *s_live_spm_val = NULL;
-static float s_live_pace_s = NAN;
-static float s_live_spm = NAN;
+static lv_obj_t *s_spm_box = NULL;
+static int s_spm_tint = -1;
+static lv_obj_t *s_cue_lbl = NULL;
 
 static lv_obj_t *s_prompt_overlay = NULL;
 static lv_obj_t *s_prompt_panel = NULL;
@@ -28,17 +31,12 @@ static lv_obj_t *s_prompt_rows = NULL;
 static lv_obj_t *s_prompt_hint = NULL;
 static bool s_prompt_allowed = false;
 
-static lv_obj_t *s_noti_overlay = NULL;
-static lv_obj_t *s_noti_panel = NULL;
-static lv_obj_t *s_noti_lbl = NULL;
-static uint32_t s_noti_hide_at_ms = 0;
-static interval_phase_t s_noti_phase = INTERVAL_PHASE_IDLE;
-static bool s_noti_show_start = false;
-
 static lv_obj_t *s_complete_overlay = NULL;
 static lv_obj_t *s_complete_panel = NULL;
 static lv_obj_t *s_complete_lbl = NULL;
 static uint32_t s_complete_hide_at_ms = 0;
+
+static interval_phase_t s_last_phase = INTERVAL_PHASE_IDLE;
 
 static void start_prompt_show_async(void *p);
 static void start_prompt_hide_async(void *p);
@@ -46,11 +44,11 @@ static void complete_prompt_show_async(void *p);
 
 static void label_set_text_if_changed(lv_obj_t *label, const char *text)
 {
-    if (!label || !text)
+    if (!label || !text) {
         return;
+    }
     const char *cur = lv_label_get_text(label);
-    if (!cur || strcmp(cur, text) != 0)
-    {
+    if (!cur || strcmp(cur, text) != 0) {
         lv_label_set_text(label, text);
     }
 }
@@ -58,8 +56,7 @@ static void label_set_text_if_changed(lv_obj_t *label, const char *text)
 static void complete_overlay_event_cb(lv_event_t *e)
 {
     (void)e;
-    if (s_complete_overlay)
-    {
+    if (s_complete_overlay) {
         lv_obj_add_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
         s_complete_hide_at_ms = 0;
     }
@@ -91,335 +88,234 @@ static void fmt_target(char *out, size_t n, interval_unit_t u, uint32_t v)
     }
 }
 
-static void fmt_pace(float sec, char *out, size_t out_len)
-{
-    if (!isfinite(sec) || sec <= 0.0f) {
-        snprintf(out, out_len, "--:--.-");
-        return;
-    }
-    int total = (int)sec;
-    int tenths = (int)lroundf((sec - (float)total) * 10.0f);
-    if (tenths >= 10) {
-        tenths = 0;
-        total += 1;
-    }
-    int s = total % 60;
-    int m = (total / 60) % 60;
-    snprintf(out, out_len, "%02d:%02d.%d", m, s, tenths);
-}
-
-#if defined(LV_FONT_MONTSERRAT_20) && LV_FONT_MONTSERRAT_20
-extern const lv_font_t lv_font_montserrat_20;
-#define SLOT_FONT_TITLE (&lv_font_montserrat_20)
-#elif defined(LV_FONT_MONTSERRAT_16) && LV_FONT_MONTSERRAT_16
-extern const lv_font_t lv_font_montserrat_16;
-#define SLOT_FONT_TITLE (&lv_font_montserrat_16)
-#else
-#define SLOT_FONT_TITLE (LV_FONT_DEFAULT)
-#endif
-
-#if defined(LV_FONT_MONTSERRAT_44) && LV_FONT_MONTSERRAT_44
-extern const lv_font_t lv_font_montserrat_44;
-#define SLOT_FONT_VALUE (&lv_font_montserrat_44)
-#elif defined(LV_FONT_MONTSERRAT_40) && LV_FONT_MONTSERRAT_40
-extern const lv_font_t lv_font_montserrat_40;
-#define SLOT_FONT_VALUE (&lv_font_montserrat_40)
-#elif defined(LV_FONT_MONTSERRAT_36) && LV_FONT_MONTSERRAT_36
-extern const lv_font_t lv_font_montserrat_36;
-#define SLOT_FONT_VALUE (&lv_font_montserrat_36)
-#else
-#define SLOT_FONT_VALUE (LV_FONT_DEFAULT)
-#endif
-
-#if defined(LV_FONT_MONTSERRAT_36) && LV_FONT_MONTSERRAT_36
-extern const lv_font_t lv_font_montserrat_36;
-#define SLOT_FONT_VALUE_SMALL (&lv_font_montserrat_36)
-#elif defined(LV_FONT_MONTSERRAT_32) && LV_FONT_MONTSERRAT_32
-extern const lv_font_t lv_font_montserrat_32;
-#define SLOT_FONT_VALUE_SMALL (&lv_font_montserrat_32)
-#else
-#define SLOT_FONT_VALUE_SMALL (SLOT_FONT_VALUE)
-#endif
-
-
-
-static bool is_landscape(void)
-{
-    return ui_is_landscape();
-}
-
 static void style_box(lv_obj_t *box)
 {
     ui_theme_apply_surface_border(box);
     lv_obj_set_style_radius(box, 0, 0);
-    lv_obj_set_style_border_color(box, lv_palette_main(LV_PALETTE_ORANGE), 0);
     lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scroll_dir(box, LV_DIR_NONE);
 }
 
-static lv_obj_t *create_slot(lv_obj_t *parent, const char *title, lv_obj_t **out_title, lv_obj_t **out_value)
+static void apply_spm_tint(uint8_t target, float spm)
+{
+    if (!s_spm_box) {
+        return;
+    }
+    int tint = 0;
+    if (target > 0 && isfinite(spm)) {
+        float d = spm - (float)target;
+        if (d < -1.0f) {
+            tint = -1;
+        } else if (d > 1.0f) {
+            tint = 1;
+        }
+    }
+    if (tint == s_spm_tint) {
+        return;
+    }
+    s_spm_tint = tint;
+    if (tint == 0) {
+        style_box(s_spm_box);
+        if (s_live_spm_val) {
+            ui_theme_apply_label(s_live_spm_val, false);
+        }
+        return;
+    }
+    lv_color_t bg = (tint < 0) ? ui_theme_color_alert() : ui_theme_color_rest();
+    lv_obj_set_style_bg_color(s_spm_box, bg, 0);
+    lv_obj_set_style_bg_opa(s_spm_box, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_spm_box, 0, 0);
+    if (s_live_spm_val) {
+        lv_obj_set_style_text_color(s_live_spm_val, lv_color_white(), 0);
+    }
+}
+
+static void apply_phase_color(interval_phase_t phase, bool countdown)
+{
+    if (!s_rem_box) {
+        return;
+    }
+    lv_color_t c = ui_theme_palette()->border;
+    if (phase == INTERVAL_PHASE_WORK) {
+        c = countdown ? ui_theme_color_alert() : ui_theme_color_work();
+    } else if (phase == INTERVAL_PHASE_REST) {
+        c = countdown ? ui_theme_color_alert() : ui_theme_color_rest();
+    }
+    lv_obj_set_style_border_color(s_rem_box, c, 0);
+    lv_obj_set_style_border_width(s_rem_box, 3, 0);
+}
+
+static lv_obj_t *create_slot(lv_obj_t *parent, const char *title, lv_obj_t **out_title, lv_obj_t **out_value, bool primary)
 {
     lv_obj_t *box = lv_obj_create(parent);
     style_box(box);
     lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(box, 4, 0);
 
     lv_obj_t *t = lv_label_create(box);
-    lv_obj_set_style_text_font(t, SLOT_FONT_TITLE, 0);
+    lv_obj_set_style_text_font(t, ui_font_caption(), 0);
     ui_theme_apply_label(t, true);
     lv_label_set_text(t, title);
     lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
 
     lv_obj_t *v = lv_label_create(box);
-    lv_obj_set_style_text_font(v, SLOT_FONT_VALUE, 0);
+    lv_obj_set_style_text_font(v, primary ? ui_font_value_lg() : ui_font_value_sm(), 0);
     ui_theme_apply_label(v, false);
     lv_label_set_text(v, "--");
     lv_obj_set_style_text_align(v, LV_TEXT_ALIGN_CENTER, 0);
 
-    if (out_title)
+    if (out_title) {
         *out_title = t;
-    if (out_value)
+    }
+    if (out_value) {
         *out_value = v;
-
+    }
     return box;
 }
 
 static void apply_live_layout(void)
 {
-    if (!s_live || !s_live_rem_val || !s_live_round_val || !s_live_pace_val || !s_live_spm_val)
+    if (!s_live || !s_live_rem_val || !s_live_pace_val || !s_live_spm_val) {
         return;
+    }
 
-    bool land = is_landscape();
     lv_obj_set_layout(s_live, LV_LAYOUT_GRID);
     lv_obj_set_style_pad_all(s_live, 0, 0);
+    lv_obj_set_style_pad_top(s_live, 0, 0);
     lv_obj_set_style_pad_row(s_live, 0, 0);
     lv_obj_set_style_pad_column(s_live, 0, 0);
     lv_obj_set_style_border_width(s_live, 0, 0);
 
-    if (land)
-    {
-        static int32_t s_col_land3[] = {LV_GRID_FR(3), LV_GRID_FR(4), LV_GRID_FR(4), LV_GRID_TEMPLATE_LAST};
-        static int32_t s_row_land2[] = {LV_GRID_FR(4), LV_GRID_FR(3), LV_GRID_TEMPLATE_LAST};
-        lv_obj_set_grid_dsc_array(s_live, s_col_land3, s_row_land2);
-
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_rem_val),
-                             LV_GRID_ALIGN_STRETCH, 0, 3,
-                             LV_GRID_ALIGN_STRETCH, 0, 1);
-
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_round_val),
-                             LV_GRID_ALIGN_STRETCH, 0, 1,
-                             LV_GRID_ALIGN_STRETCH, 1, 1);
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_spm_val),
-                             LV_GRID_ALIGN_STRETCH, 1, 1,
-                             LV_GRID_ALIGN_STRETCH, 1, 1);
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_pace_val),
-                             LV_GRID_ALIGN_STRETCH, 2, 1,
-                             LV_GRID_ALIGN_STRETCH, 1, 1);
-    }
-    else
-    {
-        static int32_t s_col_port1[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-        static int32_t s_row_port4[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
-        lv_obj_set_grid_dsc_array(s_live, s_col_port1, s_row_port4);
-
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_rem_val),
-                             LV_GRID_ALIGN_STRETCH, 0, 1,
-                             LV_GRID_ALIGN_STRETCH, 0, 1);
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_round_val),
-                             LV_GRID_ALIGN_STRETCH, 0, 1,
-                             LV_GRID_ALIGN_STRETCH, 1, 1);
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_spm_val),
-                             LV_GRID_ALIGN_STRETCH, 0, 1,
-                             LV_GRID_ALIGN_STRETCH, 2, 1);
-        lv_obj_set_grid_cell(lv_obj_get_parent(s_live_pace_val),
-                             LV_GRID_ALIGN_STRETCH, 0, 1,
-                             LV_GRID_ALIGN_STRETCH, 3, 1);
-    }
-
-    // bottom slots use smaller font in landscape to match data_page feel
-    const lv_font_t *bottom = land ? SLOT_FONT_VALUE_SMALL : SLOT_FONT_VALUE;
-    lv_obj_set_style_text_font(s_live_round_val, bottom, 0);
-    lv_obj_set_style_text_font(s_live_spm_val, bottom, 0);
-    lv_obj_set_style_text_font(s_live_pace_val, bottom, 0);
+    /* Two rows in every orientation: remaining on top, SPM | pace below. */
+    static int32_t s_cols[] = {LV_GRID_FR(1), LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+    static int32_t s_rows[] = {LV_GRID_FR(3), LV_GRID_FR(2), LV_GRID_TEMPLATE_LAST};
+    lv_obj_set_grid_dsc_array(s_live, s_cols, s_rows);
+    lv_obj_set_grid_cell(lv_obj_get_parent(s_live_rem_val), LV_GRID_ALIGN_STRETCH, 0, 2, LV_GRID_ALIGN_STRETCH, 0, 1);
+    lv_obj_set_grid_cell(lv_obj_get_parent(s_live_spm_val), LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
+    lv_obj_set_grid_cell(lv_obj_get_parent(s_live_pace_val), LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 1, 1);
 }
 
-static void update_noti(interval_ui_state_t st)
+void interval_data_page_apply_snapshot(const coach_ui_snapshot_t *snap)
 {
-    if (st.phase != s_noti_phase)
-    {
-        s_noti_phase = st.phase;
-        if (st.phase == INTERVAL_PHASE_WORK || st.phase == INTERVAL_PHASE_REST)
-        {
-            s_noti_show_start = true;
-            s_noti_hide_at_ms = lv_tick_get() + 3000;
-        }
-    }
-
-    if (s_noti_overlay && s_noti_hide_at_ms > 0)
-    {
-        if ((int32_t)(lv_tick_get() - s_noti_hide_at_ms) >= 0)
-        {
-            lv_obj_add_flag(s_noti_overlay, LV_OBJ_FLAG_HIDDEN);
-            s_noti_hide_at_ms = 0;
-            s_noti_show_start = false;
-        }
-    }
-
-    if (st.phase == INTERVAL_PHASE_DONE || st.phase == INTERVAL_PHASE_IDLE)
+    if (!s_root || !snap) {
         return;
-
-    if (!s_noti_overlay)
-    {
-        lv_obj_t *top = lv_layer_top();
-        s_noti_overlay = lv_obj_create(top);
-        lv_obj_set_size(s_noti_overlay, lv_pct(100), lv_pct(100));
-        lv_obj_set_style_bg_opa(s_noti_overlay, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(s_noti_overlay, 0, 0);
-        lv_obj_clear_flag(s_noti_overlay, LV_OBJ_FLAG_SCROLLABLE);
-
-        s_noti_panel = lv_obj_create(s_noti_overlay);
-        lv_obj_set_size(s_noti_panel, 160, 60);
-        lv_obj_set_style_bg_opa(s_noti_panel, LV_OPA_80, 0);
-        lv_obj_set_style_bg_color(s_noti_panel, lv_palette_main(LV_PALETTE_RED), 0);
-        lv_obj_set_style_border_width(s_noti_panel, 0, 0);
-        lv_obj_set_style_radius(s_noti_panel, 6, 0);
-        lv_obj_center(s_noti_panel);
-        lv_obj_clear_flag(s_noti_panel, LV_OBJ_FLAG_SCROLLABLE);
-
-        s_noti_lbl = lv_label_create(s_noti_panel);
-        ui_theme_apply_label(s_noti_lbl, false);
-        lv_obj_center(s_noti_lbl);
     }
 
-    lv_obj_set_style_bg_color(s_noti_panel,
-                              (st.phase == INTERVAL_PHASE_WORK)
-                                  ? lv_palette_main(LV_PALETTE_ORANGE)
-                                  : lv_palette_main(LV_PALETTE_GREEN),
-                              0);
-    if (s_noti_lbl)
-    {
-        if (s_noti_show_start)
-        {
-            const char *start = (st.phase == INTERVAL_PHASE_WORK) ? "WORK start" : "REST start";
-            label_set_text_if_changed(s_noti_lbl, start);
-        }
-        else if (st.unit == INTERVAL_UNIT_TIME && st.remaining <= 5)
-        {
-            const char *next = (st.phase == INTERVAL_PHASE_WORK) ? "REST" : "WORK";
-            char buf[24];
-            snprintf(buf, sizeof(buf), "%s in %us", next, (unsigned)st.remaining);
-            label_set_text_if_changed(s_noti_lbl, buf);
-        }
-        else
-        {
-            lv_obj_add_flag(s_noti_overlay, LV_OBJ_FLAG_HIDDEN);
-            return;
+    if (s_complete_overlay && s_complete_hide_at_ms > 0) {
+        if ((int32_t)(lv_tick_get() - s_complete_hide_at_ms) >= 0) {
+            lv_obj_add_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
+            s_complete_hide_at_ms = 0;
         }
     }
 
-    if (s_noti_overlay)
-        lv_obj_clear_flag(s_noti_overlay, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void tick_cb(lv_timer_t *t)
-{
-    (void)t;
-    if (!s_root) return;
-
-    interval_ui_state_t st;
-    interval_program_get_ui(&st);
-
-    if (!st.active && st.phase == INTERVAL_PHASE_IDLE) {
+    if (!snap->interval_active && snap->interval_phase == INTERVAL_PHASE_IDLE) {
         interval_config_t cfg = {0};
         interval_program_get_config(&cfg);
-
-        if (s_live_rem_val)
+        if (s_live_rem_val) {
             label_set_text_if_changed(s_live_rem_val, "READY");
-        if (s_live_rem_title)
+        }
+        if (s_live_rem_title) {
             label_set_text_if_changed(s_live_rem_title, "Remaining");
-        if (s_live_round_val)
-        {
+        }
+        if (s_live_round_val) {
             char buf[16];
             snprintf(buf, sizeof(buf), "0/%u", cfg.rounds);
             label_set_text_if_changed(s_live_round_val, buf);
         }
-        if (s_live_round_title)
-            label_set_text_if_changed(s_live_round_title, "Set");
-        if (s_live_pace_val)
+        if (s_live_pace_val) {
             label_set_text_if_changed(s_live_pace_val, "--:--.-");
-        if (s_live_pace_title)
-            label_set_text_if_changed(s_live_pace_title, "Pace (/500m)");
-        if (s_live_spm_val)
+        }
+        if (s_live_spm_val) {
             label_set_text_if_changed(s_live_spm_val, "--");
-        if (s_live_spm_title)
-            label_set_text_if_changed(s_live_spm_title, "SPM");
-        if (s_noti_overlay)
-            lv_obj_add_flag(s_noti_overlay, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (s_cue_lbl) {
+            lv_obj_add_flag(s_cue_lbl, LV_OBJ_FLAG_HIDDEN);
+        }
+        apply_phase_color(INTERVAL_PHASE_IDLE, false);
+        apply_spm_tint(0, NAN);
+        s_last_phase = INTERVAL_PHASE_IDLE;
         return;
     }
 
     char rem[24];
-    fmt_val(rem, sizeof(rem), st.unit, st.remaining);
-    if (s_live_rem_val)
+    fmt_val(rem, sizeof(rem), snap->interval_unit, snap->interval_remaining);
+    if (s_live_rem_val) {
         label_set_text_if_changed(s_live_rem_val, rem);
+    }
 
-    if (s_live_rem_title)
-    {
-        const char *ph =
-            (st.phase == INTERVAL_PHASE_WORK) ? "WORK" :
-            (st.phase == INTERVAL_PHASE_REST) ? "REST" :
-            (st.phase == INTERVAL_PHASE_DONE) ? "DONE" : "IDLE";
-        char title[32];
-        snprintf(title, sizeof(title), "Remaining: %s", ph);
+    const char *ph =
+        (snap->interval_phase == INTERVAL_PHASE_WORK) ? "WORK" :
+        (snap->interval_phase == INTERVAL_PHASE_REST) ? "REST" :
+        (snap->interval_phase == INTERVAL_PHASE_DONE) ? "DONE" : "IDLE";
+    if (s_live_rem_title) {
+        char title[24];
+        if (snap->rounds) {
+            snprintf(title, sizeof(title), "%s %u/%u", ph,
+                     (unsigned)snap->round_idx, (unsigned)snap->rounds);
+        } else {
+            snprintf(title, sizeof(title), "%s", ph);
+        }
         label_set_text_if_changed(s_live_rem_title, title);
+        lv_color_t tc = (snap->interval_phase == INTERVAL_PHASE_WORK) ? ui_theme_color_work() :
+                        (snap->interval_phase == INTERVAL_PHASE_REST) ? ui_theme_color_rest() :
+                        ui_theme_palette()->text_muted;
+        lv_obj_set_style_text_color(s_live_rem_title, tc, 0);
     }
 
     if (s_live_round_val) {
-        if (st.rounds) {
+        if (snap->rounds) {
             char buf[16];
-            snprintf(buf, sizeof(buf), "%u/%u", st.round_idx, st.rounds);
+            snprintf(buf, sizeof(buf), "%u/%u", snap->round_idx, snap->rounds);
             label_set_text_if_changed(s_live_round_val, buf);
         } else {
             label_set_text_if_changed(s_live_round_val, "--");
         }
     }
-    if (s_live_round_title)
-        label_set_text_if_changed(s_live_round_title, "Set");
 
     if (s_live_pace_val) {
         char pace[16];
-        fmt_pace(s_live_pace_s, pace, sizeof(pace));
+        ui_fmt_pace_s(snap->pace_s_per_500m, pace, sizeof(pace));
         label_set_text_if_changed(s_live_pace_val, pace);
     }
-    if (s_live_pace_title)
-        label_set_text_if_changed(s_live_pace_title, "Pace (/500m)");
-
     if (s_live_spm_val) {
-        if (!isfinite(s_live_spm)) {
-            label_set_text_if_changed(s_live_spm_val, "--");
+        char buf[12];
+        ui_fmt_spm(snap->spm, buf, sizeof(buf));
+        label_set_text_if_changed(s_live_spm_val, buf);
+    }
+    if (s_live_spm_title) {
+        if (snap->target_spm > 0) {
+            char tbuf[16];
+            snprintf(tbuf, sizeof(tbuf), "SPM %u", (unsigned)snap->target_spm);
+            label_set_text_if_changed(s_live_spm_title, tbuf);
         } else {
-            char buf[12];
-            float frac = fabsf(s_live_spm - floorf(s_live_spm));
-            if (fabsf(frac - 0.5f) < 0.01f)
-                snprintf(buf, sizeof(buf), "%.1f", (double)s_live_spm);
-            else
-                snprintf(buf, sizeof(buf), "%.0f", (double)s_live_spm);
-            label_set_text_if_changed(s_live_spm_val, buf);
+            label_set_text_if_changed(s_live_spm_title, "SPM");
         }
     }
-    if (s_live_spm_title)
-        label_set_text_if_changed(s_live_spm_title, "SPM");
+    apply_spm_tint(snap->target_spm, snap->spm);
 
-    update_noti(st);
+    bool countdown = (snap->interval_unit == INTERVAL_UNIT_TIME &&
+                      snap->interval_remaining <= 5 &&
+                      (snap->interval_phase == INTERVAL_PHASE_WORK ||
+                       snap->interval_phase == INTERVAL_PHASE_REST));
+    apply_phase_color(snap->interval_phase, countdown);
 
-    if (s_complete_overlay && s_complete_hide_at_ms > 0)
-    {
-        if ((int32_t)(lv_tick_get() - s_complete_hide_at_ms) >= 0)
-        {
-            lv_obj_add_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
-            s_complete_hide_at_ms = 0;
+    if (s_cue_lbl) {
+        if (countdown) {
+            const char *next = (snap->interval_phase == INTERVAL_PHASE_WORK) ? "REST" : "WORK";
+            char buf[24];
+            snprintf(buf, sizeof(buf), "%s in %us", next, (unsigned)snap->interval_remaining);
+            label_set_text_if_changed(s_cue_lbl, buf);
+            lv_obj_clear_flag(s_cue_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else if (snap->interval_phase != s_last_phase &&
+                   (snap->interval_phase == INTERVAL_PHASE_WORK || snap->interval_phase == INTERVAL_PHASE_REST)) {
+            label_set_text_if_changed(s_cue_lbl, ph);
+            lv_obj_clear_flag(s_cue_lbl, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_cue_lbl, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    s_last_phase = snap->interval_phase;
 }
 
 void interval_data_page_create(lv_obj_t *parent)
@@ -433,80 +329,76 @@ void interval_data_page_create(lv_obj_t *parent)
 
     s_live = s_root;
 
-    create_slot(s_live, "Remaining", &s_live_rem_title, &s_live_rem_val);
-    create_slot(s_live, "Set", &s_live_round_title, &s_live_round_val);
-    create_slot(s_live, "SPM", &s_live_spm_title, &s_live_spm_val);
-    create_slot(s_live, "Pace (/500m)", &s_live_pace_title, &s_live_pace_val);
+    s_rem_box = create_slot(s_live, "WORK", &s_live_rem_title, &s_live_rem_val, true);
+    s_spm_box = create_slot(s_live, "SPM", &s_live_spm_title, &s_live_spm_val, false);
+    create_slot(s_live, "Pace", &s_live_pace_title, &s_live_pace_val, false);
+
+    s_cue_lbl = lv_label_create(s_root);
+    ui_theme_apply_label(s_cue_lbl, false);
+    lv_obj_set_style_text_font(s_cue_lbl, ui_font_caption(), 0);
+    lv_obj_align(s_cue_lbl, LV_ALIGN_TOP_MID, 0, 2);
+    lv_obj_add_flag(s_cue_lbl, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(s_cue_lbl, "");
 
     apply_live_layout();
-
-    if (!s_timer) s_timer = lv_timer_create(tick_cb, 200, NULL);
-    tick_cb(NULL);
 }
 
 void interval_data_page_apply_theme(void)
 {
-    if (!s_root) return;
-
-    if (s_live)
-    {
-        if (s_live_rem_title)
-            ui_theme_apply_label(s_live_rem_title, true);
-        if (s_live_round_title)
-            ui_theme_apply_label(s_live_round_title, true);
-        if (s_live_spm_title)
-            ui_theme_apply_label(s_live_spm_title, true);
-        if (s_live_pace_title)
-            ui_theme_apply_label(s_live_pace_title, true);
-        if (s_live_rem_val)
-        {
-            style_box(lv_obj_get_parent(s_live_rem_val));
-            ui_theme_apply_label(s_live_rem_val, false);
-        }
-        if (s_live_round_val)
-        {
-            style_box(lv_obj_get_parent(s_live_round_val));
-            ui_theme_apply_label(s_live_round_val, false);
-        }
-        if (s_live_spm_val)
-        {
-            style_box(lv_obj_get_parent(s_live_spm_val));
-            ui_theme_apply_label(s_live_spm_val, false);
-        }
-        if (s_live_pace_val)
-        {
-            style_box(lv_obj_get_parent(s_live_pace_val));
-            ui_theme_apply_label(s_live_pace_val, false);
-        }
+    if (!s_root) {
+        return;
     }
+    if (s_live_rem_title) {
+        ui_theme_apply_label(s_live_rem_title, true);
+    }
+    if (s_live_round_title) {
+        ui_theme_apply_label(s_live_round_title, true);
+    }
+    if (s_live_spm_title) {
+        ui_theme_apply_label(s_live_spm_title, true);
+    }
+    if (s_live_pace_title) {
+        ui_theme_apply_label(s_live_pace_title, true);
+    }
+    if (s_live_rem_val) {
+        style_box(lv_obj_get_parent(s_live_rem_val));
+        ui_theme_apply_label(s_live_rem_val, false);
+    }
+    if (s_live_round_val) {
+        style_box(lv_obj_get_parent(s_live_round_val));
+        ui_theme_apply_label(s_live_round_val, false);
+    }
+    if (s_live_spm_val) {
+        style_box(lv_obj_get_parent(s_live_spm_val));
+        ui_theme_apply_label(s_live_spm_val, false);
+    }
+    if (s_live_pace_val) {
+        style_box(lv_obj_get_parent(s_live_pace_val));
+        ui_theme_apply_label(s_live_pace_val, false);
+    }
+    apply_phase_color(s_last_phase, false);
+    s_spm_tint = -1;
 }
+
 void interval_data_page_on_orientation_changed(void)
 {
-    if (!s_root) return;
+    if (!s_root) {
+        return;
+    }
     apply_live_layout();
-}
-
-void interval_data_page_set_pace_s_per_500m(float pace_s)
-{
-    s_live_pace_s = pace_s;
-}
-
-void interval_data_page_set_spm(float spm)
-{
-    s_live_spm = spm;
 }
 
 static void start_prompt_show_async(void *p)
 {
     (void)p;
-    if (!s_root || !s_prompt_allowed)
+    if (!s_root || !s_prompt_allowed) {
         return;
+    }
 
     interval_config_t cfg = {0};
     interval_program_get_config(&cfg);
 
-    if (!s_prompt_overlay)
-    {
+    if (!s_prompt_overlay) {
         lv_obj_t *top = lv_layer_top();
         s_prompt_overlay = lv_obj_create(top);
         lv_obj_set_size(s_prompt_overlay, lv_pct(100), lv_pct(100));
@@ -542,10 +434,8 @@ static void start_prompt_show_async(void *p)
         lv_obj_set_style_text_align(s_prompt_hint, LV_TEXT_ALIGN_CENTER, 0);
     }
 
-    if (s_prompt_rows)
-    {
+    if (s_prompt_rows) {
         lv_obj_clean(s_prompt_rows);
-
         char work[24];
         char rest[24];
         fmt_target(work, sizeof(work), cfg.work.unit, cfg.work.value);
@@ -562,32 +452,37 @@ static void start_prompt_show_async(void *p)
         lv_obj_t *r3 = lv_label_create(s_prompt_rows);
         ui_theme_apply_label(r3, true);
         lv_label_set_text_fmt(r3, "Rounds: %u", cfg.rounds);
+
+        if (cfg.spm_start > 0) {
+            lv_obj_t *r4 = lv_label_create(s_prompt_rows);
+            ui_theme_apply_label(r4, true);
+            lv_label_set_text_fmt(r4, "SPM: %u +%u/rd", cfg.spm_start, cfg.spm_step);
+        }
     }
 
-    if (s_prompt_hint)
-    {
+    if (s_prompt_hint) {
         lv_label_set_text(s_prompt_hint, "Press PWR key to start");
     }
-
-    if (s_prompt_overlay)
+    if (s_prompt_overlay) {
         lv_obj_clear_flag(s_prompt_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void start_prompt_hide_async(void *p)
 {
     (void)p;
-    if (s_prompt_overlay)
+    if (s_prompt_overlay) {
         lv_obj_add_flag(s_prompt_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void complete_prompt_show_async(void *p)
 {
     (void)p;
-    if (!s_root)
+    if (!s_root) {
         return;
-
-    if (!s_complete_overlay)
-    {
+    }
+    if (!s_complete_overlay) {
         lv_obj_t *top = lv_layer_top();
         s_complete_overlay = lv_obj_create(top);
         lv_obj_set_size(s_complete_overlay, lv_pct(100), lv_pct(100));
@@ -595,7 +490,6 @@ static void complete_prompt_show_async(void *p)
         lv_obj_set_style_bg_color(s_complete_overlay, lv_color_black(), 0);
         lv_obj_set_style_border_width(s_complete_overlay, 0, 0);
         lv_obj_clear_flag(s_complete_overlay, LV_OBJ_FLAG_SCROLLABLE);
-
         lv_obj_add_event_cb(s_complete_overlay, complete_overlay_event_cb, LV_EVENT_CLICKED, NULL);
 
         s_complete_panel = lv_obj_create(s_complete_overlay);
@@ -612,10 +506,10 @@ static void complete_prompt_show_async(void *p)
         lv_label_set_text(s_complete_lbl, "Interval complete");
         lv_obj_center(s_complete_lbl);
     }
-
     s_complete_hide_at_ms = lv_tick_get() + 5000;
-    if (s_complete_overlay)
+    if (s_complete_overlay) {
         lv_obj_clear_flag(s_complete_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void interval_data_page_show_start_prompt(void)

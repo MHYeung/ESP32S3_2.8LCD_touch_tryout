@@ -1,5 +1,5 @@
 {
-  "name": "RowCoach",
+  "name": "ESP32-S3 Speed Coach",
   "version": "1.0.0",
   "builds": [
     {
@@ -8,7 +8,7 @@
       "parts": [
         { "path": "bootloader.bin", "offset": 4096 },
         { "path": "partition-table.bin", "offset": 32768 },
-        { "path": "esp32s3_rowcoach.bin", "offset": 65536 }
+        { "path": "esp32s3_speed_coach.bin", "offset": 65536 }
       ]
     }
   ]

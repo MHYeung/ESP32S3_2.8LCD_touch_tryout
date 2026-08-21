@@ -12,6 +12,10 @@ typedef struct {
     lv_color_t border;
     lv_color_t accent;
     lv_color_t accent_text;
+    lv_color_t work;
+    lv_color_t rest;
+    lv_color_t alert;
+    lv_color_t rec;
 } ui_theme_palette_t;
 
 typedef enum {
@@ -35,4 +39,11 @@ void ui_theme_apply_surface_border(lv_obj_t *obj);
 void ui_theme_apply_label(lv_obj_t *label, bool muted);
 void ui_theme_apply_button(lv_obj_t *btn);
 void ui_theme_apply_switch(lv_obj_t *sw);
+void ui_theme_apply_tile(lv_obj_t *obj);
+
+lv_color_t ui_theme_color_work(void);
+lv_color_t ui_theme_color_rest(void);
+lv_color_t ui_theme_color_alert(void);
+lv_color_t ui_theme_color_rec(void);
+lv_color_t ui_theme_color_accent(void);
 

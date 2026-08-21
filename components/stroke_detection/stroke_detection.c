@@ -86,7 +86,7 @@ void stroke_detection_init(stroke_detection_t *sd_, const stroke_detection_cfg_t
 
     // Buffer sizing
     sd->win_n = (int)lroundf(cfg->fs_hz * cfg->axis_window_s);
-    sd->win_n = (int)clampf((float)sd->win_n, 32.0f, 1024.0f);
+    sd->win_n = (int)clampf((float)sd->win_n, 32.0f, (float)STROKE_AXIS_BUF_MAX);
 
     // --- CORRECTION HERE ---
     // Use the config value (axis_hold_s) instead of hardcoded 1.0f
@@ -188,6 +188,8 @@ stroke_event_t stroke_detection_update(stroke_detection_t *sd_,
 
     // s0 is our "Rectified Surge" (Positive = Drive)
     float s0 = (float)sd->polarity * a_f;
+    sd->last_thr = thr;
+    sd->last_s0 = s0;
 
     // 7. State Machine
     

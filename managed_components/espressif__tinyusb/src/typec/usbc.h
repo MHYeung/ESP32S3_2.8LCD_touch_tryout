@@ -24,8 +24,8 @@
  * This file is part of the TinyUSB stack.
  */
 
-#ifndef _TUSB_UTCD_H_
-#define _TUSB_UTCD_H_
+#ifndef TUSB_UTCD_H_
+#define TUSB_UTCD_H_
 
 #include "common/tusb_common.h"
 #include "pd_types.h"
@@ -52,6 +52,14 @@ bool tuc_init(uint8_t rhport, uint32_t port_type);
 // Check if typec port is initialized
 bool tuc_inited(uint8_t rhport);
 
+// Enable Type-C port terminations
+// Return false if port is not initialized
+bool tuc_connect(uint8_t rhport);
+
+// Disable Type-C port terminations
+// Return false if port is not initialized
+bool tuc_disconnect(uint8_t rhport);
+
 // Task function should be called in main/rtos loop, extended version of tud_task()
 // - timeout_ms: millisecond to wait, zero = no wait, 0xFFFFFFFF = wait forever
 // - in_isr: if function is called in ISR
@@ -63,7 +71,7 @@ void tuc_task (void) {
   tuc_task_ext(UINT32_MAX, false);
 }
 
-#ifndef _TUSB_TCD_H_
+#ifndef TUSB_TCD_H_
 extern void tcd_int_handler(uint8_t rhport);
 #endif
 

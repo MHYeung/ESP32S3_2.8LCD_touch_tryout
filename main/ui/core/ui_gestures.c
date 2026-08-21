@@ -1,11 +1,16 @@
 #include "ui_core_internal.h"
+#include "ui_sensors_page.h"
 
 void top_swipe_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
     if (!indev || ui_s_transitioning ||
-        (ui_s_current_page != UI_PAGE_DATA && ui_s_current_page != UI_INTERVAL_DATA_PAGE))
+        (ui_s_current_page != UI_PAGE_DATA &&
+         ui_s_current_page != UI_INTERVAL_DATA_PAGE &&
+         ui_s_current_page != UI_RACE_DATA_PAGE))
+        return;
+    if (ui_is_touch_lock())
         return;
 
     if (code == LV_EVENT_PRESSED)
@@ -176,11 +181,54 @@ void activity_detail_bottom_swipe_event_cb(lv_event_t *e)
     }
 }
 
+void overlay_bottom_swipe_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
+    if (!indev || ui_s_transitioning)
+        return;
+
+    ui_page_t dest = UI_PAGE_MENU;
+    if (ui_s_current_page == UI_SENSORS_PAGE)
+        dest = sensors_page_get_return_page();
+    else
+        return;
+
+    if (code == LV_EVENT_PRESSED)
+    {
+        ui_s_overlay_swipe_sum.x = 0;
+        ui_s_overlay_swipe_sum.y = 0;
+        ui_s_overlay_swipe_armed = true;
+    }
+    else if (code == LV_EVENT_RELEASED)
+    {
+        ui_s_overlay_swipe_armed = false;
+    }
+    else if (code == LV_EVENT_PRESSING && ui_s_overlay_swipe_armed)
+    {
+        lv_point_t v;
+        lv_indev_get_vect(indev, &v);
+        ui_s_overlay_swipe_sum.x += v.x;
+        ui_s_overlay_swipe_sum.y += v.y;
+
+        if (ui_s_overlay_swipe_sum.y < -30 &&
+            LV_ABS(ui_s_overlay_swipe_sum.y) > (LV_ABS(ui_s_overlay_swipe_sum.x) + 10))
+        {
+            ui_s_overlay_swipe_armed = false;
+            lv_indev_stop_processing(indev);
+            lv_indev_wait_release(indev);
+            ui_go_to_page(dest, true);
+        }
+    }
+}
+
 void data_right_swipe_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
     if (!indev || ui_s_transitioning || ui_s_current_page != UI_PAGE_DATA || !ui_s_interval_data_visible)
+        return;
+    if (ui_is_touch_lock())
         return;
 
     if (code == LV_EVENT_PRESSED)
@@ -217,6 +265,8 @@ void interval_left_swipe_event_cb(lv_event_t *e)
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = (lv_indev_t *)lv_event_get_param(e);
     if (!indev || ui_s_transitioning || ui_s_current_page != UI_INTERVAL_DATA_PAGE || !ui_s_interval_data_visible)
+        return;
+    if (ui_is_touch_lock())
         return;
 
     if (code == LV_EVENT_PRESSED)

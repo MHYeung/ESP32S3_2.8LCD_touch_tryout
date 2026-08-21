@@ -88,6 +88,8 @@ void interval_program_init(void)
         .rest = {.unit = INTERVAL_UNIT_TIME, .value = 60},
         .rounds = 10,
         .auto_advance = true,
+        .spm_start = 0,
+        .spm_step = 0,
     };
     interval_program_set_config(&def);
     interval_program_stop();
@@ -198,4 +200,20 @@ void interval_program_get_ui(interval_ui_state_t *out)
     out->progress_permille = (s_target > 0) ? (uint16_t)((1000ULL * s_progress) / s_target) : 0;
 
     portEXIT_CRITICAL(&s_mux);
+}
+
+uint8_t interval_program_target_spm(void)
+{
+    uint8_t target = 0;
+    portENTER_CRITICAL(&s_mux);
+    if (s_cfg.spm_start > 0) {
+        uint16_t idx = (s_round_idx > 0) ? (s_round_idx - 1) : 0;
+        uint16_t stepped = (uint16_t)s_cfg.spm_start + (uint16_t)idx * (uint16_t)s_cfg.spm_step;
+        if (stepped > 255) {
+            stepped = 255;
+        }
+        target = (uint8_t)stepped;
+    }
+    portEXIT_CRITICAL(&s_mux);
+    return target;
 }

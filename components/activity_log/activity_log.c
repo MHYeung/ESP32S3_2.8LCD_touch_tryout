@@ -261,7 +261,7 @@ esp_err_t activity_log_start(activity_log_t *log, sd_mmc_helper_t *sd, time_t st
         format_timestamp(start_ts, time_str, sizeof(time_str)); // Uses your existing helper
 
         // 2. Write Metadata Rows (Device Settings)
-        fprintf(log->f_splits, "Device Info,ESP32S3-BLE Rowing Speed Coach\n");
+        fprintf(log->f_splits, "Device Info,ESP32-S3 Speed Coach\n");
         fprintf(log->f_splits, "Session Start,%s\n", time_str);
         fprintf(log->f_splits, "Activity Type,%s\n",  get_activity_string_fast(log->activity_type));
         if (is_interval)

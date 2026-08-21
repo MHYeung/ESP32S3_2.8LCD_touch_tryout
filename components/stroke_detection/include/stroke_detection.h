@@ -14,6 +14,13 @@
 #define STROKE_THR_FLOOR_DEFAULT 0.35f 
 #endif
 
+/* Axis-variance ring buffer depth. 512 samples @200 Hz = 2.56 s, which is long
+ * enough to pick the surge axis. Three float buffers, so each 256 costs 3 KB of
+ * .bss on a PSRAM-less board. stroke_detection_init() clamps win_n to this. */
+#ifndef STROKE_AXIS_BUF_MAX
+#define STROKE_AXIS_BUF_MAX 512
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -84,9 +91,9 @@ typedef struct stroke_detection {
     int hold_count;
     int best_axis; 
 
-    float buf_x[1024];
-    float buf_y[1024];
-    float buf_z[1024];
+    float buf_x[STROKE_AXIS_BUF_MAX];
+    float buf_y[STROKE_AXIS_BUF_MAX];
+    float buf_z[STROKE_AXIS_BUF_MAX];
     float sum[3];
     float sumsq[3];
 
@@ -98,6 +105,8 @@ typedef struct stroke_detection {
 
     // Adaptive Threshold
     float rms2_ewma;
+    float last_thr;      // most recent trigger threshold (diagnostics)
+    float last_s0;       // most recent rectified surge (diagnostics)
     bool polarity_locked;
 
     // State Machine

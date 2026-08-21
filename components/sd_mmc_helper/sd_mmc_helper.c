@@ -12,9 +12,9 @@
 #define SD_TAG "sd_mmc_helper"
 
 /* Waveshare board SDMMC pins (from SD_MMC.h / pinout) */
-#define SD_PIN_CLK 14 // SD SCLK
-#define SD_PIN_CMD 17 // SD CMD
-#define SD_PIN_D0 16  // SD D0 (MISO)
+#define SD_PIN_CLK GPIO_NUM_14 // SD SCLK
+#define SD_PIN_CMD GPIO_NUM_17 // SD CMD
+#define SD_PIN_D0  GPIO_NUM_16 // SD D0 (MISO)
 
 /* Mount the card at mount_point, e.g. "/sdcard" */
 esp_err_t sd_mmc_helper_mount(sd_mmc_helper_t *sd,
@@ -38,9 +38,9 @@ esp_err_t sd_mmc_helper_mount(sd_mmc_helper_t *sd,
     slot_config.clk = SD_PIN_CLK;
     slot_config.cmd = SD_PIN_CMD;
     slot_config.d0 = SD_PIN_D0;
-    slot_config.d1 = -1;
-    slot_config.d2 = -1;
-    slot_config.d3 = -1;
+    slot_config.d1 = GPIO_NUM_NC;
+    slot_config.d2 = GPIO_NUM_NC;
+    slot_config.d3 = GPIO_NUM_NC;
 
     // Use internal pull-ups in addition to external ones, if present
     slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
@@ -164,9 +164,9 @@ esp_err_t sd_mmc_helper_init_sdmmc_raw(sdmmc_card_t **out_card)
     slot_config.clk = SD_PIN_CLK;
     slot_config.cmd = SD_PIN_CMD;
     slot_config.d0 = SD_PIN_D0;
-    slot_config.d1 = -1;
-    slot_config.d2 = -1;
-    slot_config.d3 = -1;
+    slot_config.d1 = GPIO_NUM_NC;
+    slot_config.d2 = GPIO_NUM_NC;
+    slot_config.d3 = GPIO_NUM_NC;
     slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
     esp_err_t ret = sdmmc_host_init();

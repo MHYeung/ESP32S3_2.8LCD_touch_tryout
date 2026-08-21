@@ -15,6 +15,9 @@ idf_component_register(
         "ui/core/ui_gestures.c"
         "ui/core/ui_layout.c"
         "ui/core/ui_pages.c"
+        "ui/core/ui_typography.c"
+        "ui/core/ui_format.c"
+        "ui/core/coach_ui_snapshot.c"
         "ui/settings/ui_settings_page.c"
         "ui/data/ui_data_page.c"
         "ui/settings/ui_status_bar.c"
@@ -24,8 +27,15 @@ idf_component_register(
         "ui/activity_summary/ui_activity_detail_page.c"
         "ui/interval/ui_interval_setup_page.c"
         "ui/interval/ui_interval_data_page.c"
+        "ui/interval/ui_step_setup_page.c"
+        "ui/race/ui_race_setup_page.c"
+        "ui/race/ui_race_data_page.c"
+        "ui/sensors/ui_sensors_page.c"
         "interval_program/interval_program.c"
+        "race_program/race_program.c"
         "ui/fonts/lv_font_fa_solid_28.c"
+        "ui/fonts/lv_font_num_56.c"
+        "ui/fonts/lv_font_num_32.c"
         
     INCLUDE_DIRS
         "."
@@ -35,9 +45,12 @@ idf_component_register(
         "ui/activity_summary"
         "ui/data"
         "ui/interval"
+        "ui/race"
+        "ui/sensors"
         "ui/menu"
         "ui/settings"
         "interval_program"
+        "race_program"
     REQUIRES
         lcd_st7789
         touch_cst328
@@ -55,5 +68,6 @@ idf_component_register(
         storage_paths
         gps_gtu8
         nvs_helper
+        sensor_hub
         esp_tinyusb
 )

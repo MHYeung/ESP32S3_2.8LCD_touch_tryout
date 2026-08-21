@@ -18,6 +18,8 @@ typedef struct {
     interval_target_t rest;
     uint16_t rounds;
     bool auto_advance;
+    uint8_t spm_start;      /* 0 = plain interval (no rate ladder) */
+    uint8_t spm_step;
 } interval_config_t;
 
 typedef enum {
@@ -56,3 +58,6 @@ void interval_program_update(bool recording,
                              uint32_t stroke_count);
 
 void interval_program_get_ui(interval_ui_state_t *out);
+
+/* 0 when not a step test. round_idx is 1-based. */
+uint8_t interval_program_target_spm(void);

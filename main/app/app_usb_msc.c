@@ -1,25 +1,36 @@
 #include "app_usb_msc.h"
 #include "app_context.h"
 #include "sd_mmc_helper.h"
-#include "driver/sdmmc_host.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
 #include "tinyusb_msc.h"
+#include "ui_settings_page.h"
+#include "esp_lvgl_port.h"
 #include "esp_log.h"
-#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 
 static const char *TAG = "usb_msc";
+
+typedef enum
+{
+    USB_MSC_CMD_ENTER = 0,
+    USB_MSC_CMD_LEAVE,
+} usb_msc_cmd_t;
 
 static bool s_usb_msc_active = false;
 static sdmmc_card_t *s_msc_card = NULL;
 static tinyusb_msc_storage_handle_t s_msc_storage = NULL;
+static QueueHandle_t s_cmd_q;
+static volatile bool s_busy;
 
 bool app_usb_msc_is_active(void)
 {
     return s_usb_msc_active;
 }
 
-esp_err_t app_usb_msc_enter(void)
+static esp_err_t usb_msc_enter(void)
 {
     if (s_usb_msc_active)
     {
@@ -39,15 +50,14 @@ esp_err_t app_usb_msc_enter(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    /* VFS unmount already calls host->deinit_p (sdmmc_host_deinit_slot)
+     * and frees the card. Do not call sdmmc_host_deinit() again. */
     esp_err_t ret = sd_mmc_helper_unmount(&s_sd);
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "SD unmount failed: %s", esp_err_to_name(ret));
         return ret;
     }
-
-    /* FAT unmount does not deinit SDMMC host; deinit so raw init can reinit cleanly */
-    sdmmc_host_deinit();
 
     ret = sd_mmc_helper_init_sdmmc_raw(&s_msc_card);
     if (ret != ESP_OK)
@@ -104,7 +114,7 @@ fail:
     return ret;
 }
 
-esp_err_t app_usb_msc_leave(void)
+static esp_err_t usb_msc_leave(void)
 {
     if (!s_usb_msc_active)
     {
@@ -112,7 +122,6 @@ esp_err_t app_usb_msc_leave(void)
         return ESP_OK;
     }
 
-    /* Order: stop MSC storage, then TinyUSB, then MSC driver, then SD */
     (void)tinyusb_msc_delete_storage(s_msc_storage);
     s_msc_storage = NULL;
     tinyusb_driver_uninstall();
@@ -130,4 +139,68 @@ esp_err_t app_usb_msc_leave(void)
     s_usb_msc_active = false;
     ESP_LOGI(TAG, "USB storage mode off, SD remounted");
     return ret;
+}
+
+static void usb_msc_worker(void *arg)
+{
+    (void)arg;
+    usb_msc_cmd_t cmd;
+
+    for (;;)
+    {
+        if (xQueueReceive(s_cmd_q, &cmd, portMAX_DELAY) != pdTRUE)
+            continue;
+
+        if (cmd == USB_MSC_CMD_ENTER)
+            (void)usb_msc_enter();
+        else
+            (void)usb_msc_leave();
+
+        s_busy = false;
+
+        lvgl_port_lock(0);
+        settings_page_sync_usb_state();
+        lvgl_port_unlock();
+    }
+}
+
+static esp_err_t usb_msc_post(usb_msc_cmd_t cmd)
+{
+    if (s_busy)
+    {
+        ESP_LOGW(TAG, "USB MSC busy");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!s_cmd_q)
+    {
+        s_cmd_q = xQueueCreate(1, sizeof(usb_msc_cmd_t));
+        if (!s_cmd_q)
+            return ESP_ERR_NO_MEM;
+        if (xTaskCreate(usb_msc_worker, "usb_msc", 8192, NULL, 5, NULL) != pdPASS)
+        {
+            vQueueDelete(s_cmd_q);
+            s_cmd_q = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    s_busy = true;
+    if (xQueueSend(s_cmd_q, &cmd, 0) != pdTRUE)
+    {
+        s_busy = false;
+        ESP_LOGW(TAG, "USB MSC queue full");
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
+}
+
+esp_err_t app_usb_msc_request_enter(void)
+{
+    return usb_msc_post(USB_MSC_CMD_ENTER);
+}
+
+esp_err_t app_usb_msc_request_leave(void)
+{
+    return usb_msc_post(USB_MSC_CMD_LEAVE);
 }

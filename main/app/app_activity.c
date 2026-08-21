@@ -2,13 +2,18 @@
 
 #include "storage_paths.h"
 #include "app_context.h"
+#include "app_imu.h"
 #include "activity.h"
 #include "activity_log.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "interval_program.h"
+#include "nvs_helper.h"
+#include "race_program.h"
 #include "ui.h"
 #include "ui_data_page.h"
 #include "ui_interval_data_page.h"
+#include "ui_race_data_page.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -54,15 +59,6 @@ void activity_worker_task(void *arg)
         if (xQueueReceive(s_act_q, &cmd, portMAX_DELAY) != pdTRUE)
             continue;
 
-        if (cmd == ACT_CMD_START_INTERVAL_NORMAL)
-        {
-            ui_go_to_page(UI_INTERVAL_DATA_PAGE, true);
-        }
-        else
-        {
-            ui_go_to_page(UI_PAGE_DATA, true);
-        }
-
         if (s_activity_mutex)
             xSemaphoreTake(s_activity_mutex, portMAX_DELAY);
 
@@ -70,47 +66,51 @@ void activity_worker_task(void *arg)
         {
             s_activity_recording = true;
             s_session_time_s = 0.0f;
-            ui_set_interval_data_visible(false);
+            s_session_last_us = esp_timer_get_time();
             s_interval_done_queued = false;
+            app_imu_request_session_reset();
+            if (nvs_helper_get_metrics_lock()) {
+                ui_set_touch_lock(true);
+            }
 
-            uint32_t id = s_activity_next_id++;
+            uint32_t id = nvs_helper_get_next_activity_id();
             activity_init(&s_activity, id);
             activity_start(&s_activity, time(NULL));
-            s_activity.activity_type = ACTIVITY_NORMAL;
+            activity_set_type(&s_activity, ACTIVITY_NORMAL);
 
             activity_log_set_interval_config(&s_act_log, NULL);
             activity_log_set_split_interval(&s_act_log, s_current_split_m);
-
-            if (s_sd.mounted)
-            {
-                // Starts the per-stroke CSV log file on the SD card
-                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id, ACTIVITY_NORMAL);
-            }
-
             s_last_session_stroke_count = 0;
 
             if (s_activity_mutex)
                 xSemaphoreGive(s_activity_mutex);
 
+            ui_set_interval_data_visible(false);
+            ui_set_race_data_visible(false);
+            if (s_sd.mounted)
+                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, id, ACTIVITY_NORMAL);
+
             data_page_show_activity_toast(true);
             ESP_LOGI("ACT", "START id=%lu", (unsigned long)id);
+            continue;
         }
 
         if (cmd == ACT_CMD_START_INTERVAL_NORMAL)
         {
-            // Start normal activity logging first (same as ACT_CMD_START)
             s_activity_recording = true;
             s_session_time_s = 0.0f;
+            s_session_last_us = esp_timer_get_time();
             s_interval_done_queued = false;
+            app_imu_request_session_reset();
+            if (nvs_helper_get_metrics_lock()) {
+                ui_set_touch_lock(true);
+            }
 
-            ui_set_interval_data_visible(true);
-            interval_data_page_hide_start_prompt();
-            ui_go_to_page(UI_INTERVAL_DATA_PAGE, false);
-            uint32_t id = s_activity_next_id++;
+            uint32_t id = nvs_helper_get_next_activity_id();
             activity_init(&s_activity, id);
             activity_start(&s_activity, time(NULL));
-            s_activity.activity_type = ACTIVITY_INTERVAL_NORMAL;
-            resolve_interval_split_m();
+            activity_set_type(&s_activity, ACTIVITY_INTERVAL_NORMAL);
+            (void)resolve_interval_split_m();
             activity_log_set_split_interval(&s_act_log, s_current_split_m);
 
             interval_config_t cfg = {0};
@@ -118,33 +118,119 @@ void activity_worker_task(void *arg)
             activity_log_interval_cfg_t log_cfg = {0};
             fill_interval_log_cfg(&log_cfg, &cfg);
             activity_log_set_interval_config(&s_act_log, &log_cfg);
-
-            if (s_sd.mounted)
-            {
-                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, s_activity.id, ACTIVITY_INTERVAL_NORMAL);
-            }
-
             s_last_session_stroke_count = 0;
-
-            // Start interval program (you likely already have these APIs or can add them)
-            interval_program_start();
 
             if (s_activity_mutex)
                 xSemaphoreGive(s_activity_mutex);
 
+            ui_set_interval_data_visible(true);
+            interval_data_page_hide_start_prompt();
+            ui_set_race_data_visible(false);
+            ui_go_to_page(UI_INTERVAL_DATA_PAGE, false);
+            if (s_sd.mounted)
+                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, id, ACTIVITY_INTERVAL_NORMAL);
+            interval_program_start();
             data_page_show_activity_toast(true);
             ESP_LOGI("ACT", "START_INTERVAL id=%lu", (unsigned long)id);
+            continue;
+        }
+
+        if (cmd == ACT_CMD_START_INTERVAL_STEP)
+        {
+            s_activity_recording = true;
+            s_session_time_s = 0.0f;
+            s_session_last_us = esp_timer_get_time();
+            s_interval_done_queued = false;
+            app_imu_request_session_reset();
+            if (nvs_helper_get_metrics_lock()) {
+                ui_set_touch_lock(true);
+            }
+
+            uint32_t id = nvs_helper_get_next_activity_id();
+            activity_init(&s_activity, id);
+            activity_start(&s_activity, time(NULL));
+            activity_set_type(&s_activity, ACTIVITY_INTERVAL_STEP);
+            (void)resolve_interval_split_m();
+            activity_log_set_split_interval(&s_act_log, s_current_split_m);
+
+            interval_config_t cfg = {0};
+            interval_program_get_config(&cfg);
+            activity_log_interval_cfg_t log_cfg = {0};
+            fill_interval_log_cfg(&log_cfg, &cfg);
+            activity_log_set_interval_config(&s_act_log, &log_cfg);
+            s_last_session_stroke_count = 0;
+
+            if (s_activity_mutex)
+                xSemaphoreGive(s_activity_mutex);
+
+            ui_set_interval_data_visible(true);
+            interval_data_page_hide_start_prompt();
+            ui_go_to_page(UI_INTERVAL_DATA_PAGE, false);
+            if (s_sd.mounted)
+                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, id, ACTIVITY_INTERVAL_STEP);
+            interval_program_start();
+            data_page_show_activity_toast(true);
+            ESP_LOGI("ACT", "START_STEP id=%lu", (unsigned long)id);
+            continue;
+        }
+
+        if (cmd == ACT_CMD_START_RACE)
+        {
+            s_activity_recording = true;
+            s_session_time_s = 0.0f;
+            s_session_last_us = esp_timer_get_time();
+            s_interval_done_queued = false;
+            app_imu_request_session_reset();
+            if (nvs_helper_get_metrics_lock()) {
+                ui_set_touch_lock(true);
+            }
+
+            uint32_t id = nvs_helper_get_next_activity_id();
+            activity_init(&s_activity, id);
+            activity_start(&s_activity, time(NULL));
+            activity_set_type(&s_activity, ACTIVITY_RACE);
+            activity_log_set_interval_config(&s_act_log, NULL);
+            activity_log_set_split_interval(&s_act_log, s_current_split_m);
+            s_last_session_stroke_count = 0;
+
+            if (s_activity_mutex)
+                xSemaphoreGive(s_activity_mutex);
+
+            ui_set_interval_data_visible(false);
+            ui_set_race_data_visible(true);
+            race_data_page_hide_start_prompt();
+            ui_go_to_page(UI_RACE_DATA_PAGE, false);
+            if (s_sd.mounted)
+                activity_log_start(&s_act_log, &s_sd, s_activity.start_ts, id, ACTIVITY_RACE);
+            race_program_start();
+            data_page_show_activity_toast(true);
+            ESP_LOGI("ACT", "START_RACE id=%lu", (unsigned long)id);
+            continue;
         }
 
         if (cmd == ACT_CMD_STOP_SAVE)
         {
             s_activity_recording = false;
             ui_set_interval_data_visible(false);
+            ui_set_race_data_visible(false);
             interval_data_page_hide_start_prompt();
+            race_data_page_hide_start_prompt();
+            if (ui_get_current_page() == UI_RACE_DATA_PAGE)
+                ui_go_to_page(UI_PAGE_DATA, false);
             interval_program_stop();
+            race_program_stop();
             s_interval_done_queued = false;
+            ui_set_touch_lock(false);
 
-            // Stop logic updates end time and averages
+            if (s_session_last_us > 0) {
+                int64_t elapsed_us = esp_timer_get_time() - s_session_last_us;
+                if (elapsed_us < 0)
+                    elapsed_us = 0;
+                uint32_t dur_ms = (uint32_t)(elapsed_us / 1000);
+                if (dur_ms > s_activity.duration_ms)
+                    s_activity.duration_ms = dur_ms;
+            }
+
             activity_stop(&s_activity, time(NULL));
 
             activity_t snapshot = s_activity;
@@ -152,7 +238,9 @@ void activity_worker_task(void *arg)
                 xSemaphoreGive(s_activity_mutex);
 
             data_page_show_activity_toast(false);
-            ESP_LOGI("ACT", "STOP id=%lu Dist=%.1fm", (unsigned long)snapshot.id, (double)snapshot.distance_m);
+            ESP_LOGI("ACT", "STOP id=%lu Dist=%.1fm dur=%.1fs",
+                     (unsigned long)snapshot.id, (double)snapshot.distance_m,
+                     (double)(snapshot.duration_ms / 1000.0f));
 
             float final_time_s = snapshot.duration_ms / 1000.0f;
             if (s_act_log.opened)
@@ -221,10 +309,18 @@ void activity_worker_task(void *arg)
     }
 }
 
+esp_err_t app_activity_post_cmd(act_cmd_t cmd)
+{
+    if (!s_act_q)
+        return ESP_ERR_INVALID_STATE;
+    if (xQueueSend(s_act_q, &cmd, 0) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+    return ESP_OK;
+}
+
 void on_stop_save_confirmed(void)
 {
-    act_cmd_t cmd = ACT_CMD_STOP_SAVE;
-    xQueueSend(s_act_q, &cmd, 0);
+    (void)app_activity_post_cmd(ACT_CMD_STOP_SAVE);
 }
 
 void activity_logger_task(void *arg)

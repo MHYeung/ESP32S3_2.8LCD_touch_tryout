@@ -181,6 +181,7 @@ static lv_obj_t *make_row(lv_obj_t *parent, const char *title, lv_obj_t **out_dd
 
     lv_obj_t *sb = lv_spinbox_create(line);
     lv_obj_set_width(sb, 76);
+    ui_yield_for_idle();
 
     lv_obj_t *inc = lv_btn_create(line);
     lv_obj_t *i = lv_label_create(inc);
@@ -220,6 +221,8 @@ static void confirm_cb(lv_event_t *e)
     if (cfg.rounds == 0)
         cfg.rounds = 1;
     cfg.auto_advance = true;
+    cfg.spm_start = 0;
+    cfg.spm_step = 0;
 
     interval_program_set_config(&cfg);
     interval_program_stop(); // IMPORTANT: do NOT start here

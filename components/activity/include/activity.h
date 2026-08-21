@@ -28,7 +28,7 @@ typedef enum{
 
 
 /**
- * Rowing activity/session summary + running stats.
+ * Paddle-sport activity/session summary + running stats.
  * Think of this as your "Activity class" in C.
  */
 typedef struct {
@@ -56,6 +56,10 @@ typedef struct {
 
     float    avg_power_w;
     float    max_power_w;
+
+    /* Separate dt so GPS dropouts do not drag avg speed toward 0. */
+    double   speed_dt;
+    double   spm_dt;
 
     // Internal accumulators (don’t edit directly)
     activity_state_t state;
@@ -87,6 +91,8 @@ esp_err_t activity_start(activity_t *a, time_t start_ts);
  * - speed_mps/spm/power_w: latest measured values
  * - distance_delta_m: distance increment since last update (can be 0 if unknown)
  * - stroke_delta: number of strokes since last update (0/1/2)
+ * - speed_valid / spm_valid: skip that channel's average when the sample is
+ *   stale (GPS dropout) or unmeasured. Duration and stroke count still advance.
  */
 esp_err_t activity_update(activity_t *a,
                           float dt_s,
@@ -94,7 +100,9 @@ esp_err_t activity_update(activity_t *a,
                           float spm,
                           float power_w,
                           float distance_delta_m,
-                          uint32_t stroke_delta);
+                          uint32_t stroke_delta,
+                          bool speed_valid,
+                          bool spm_valid);
 
 /**
  * Stop a session. If end_ts==0, uses time(NULL).

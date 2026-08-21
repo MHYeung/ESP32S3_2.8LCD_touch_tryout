@@ -27,3 +27,21 @@ void nvs_helper_set_dark_mode(bool enabled);
 void nvs_helper_set_auto_rotate(bool enabled);
 void nvs_helper_set_split_len(uint32_t len_m);
 void nvs_helper_set_orientation(uint8_t orient);
+
+/* Live-screen metric slots (0..2). Values are data_metric_t stored as u8. */
+void nvs_helper_get_data_metrics(uint8_t out[3]);
+void nvs_helper_set_data_metrics(const uint8_t in[3]);
+bool nvs_helper_get_metrics_lock(void);     /* Default: true (lock while recording) */
+void nvs_helper_set_metrics_lock(bool enabled);
+
+uint8_t nvs_helper_get_brightness(void);    /* Default: 80 percent */
+void nvs_helper_set_brightness(uint8_t percent);
+bool nvs_helper_get_auto_dim(void);         /* Default: true */
+void nvs_helper_set_auto_dim(bool enabled);
+
+bool nvs_helper_get_sensors_enabled(void);  /* Default: false */
+void nvs_helper_set_sensors_enabled(bool enabled);
+void nvs_helper_get_sensor_addr(uint8_t out[6]);
+void nvs_helper_set_sensor_addr(const uint8_t in[6]);
+uint8_t nvs_helper_get_sensor_addr_type(void);
+void nvs_helper_set_sensor_addr_type(uint8_t addr_type);

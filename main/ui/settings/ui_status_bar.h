@@ -1,30 +1,43 @@
 #pragma once
 
 #include "lvgl.h"
+#include "ui.h"
+#include "coach_ui_snapshot.h"
+
 #include <stdbool.h>
 #include <stdint.h>
-#include "ui.h"
+
+typedef enum {
+    UI_STATUS_BAR_FULL = 0,
+    UI_STATUS_BAR_COMPACT,
+} ui_status_bar_kind_t;
+
+#define UI_STATUS_BAR_COMPACT_H 22
+#define UI_STATUS_BAR_FULL_H    22
 
 typedef struct {
     lv_obj_t *root;
     lv_obj_t *time_label;
 
-    /* GPS widget: icon + 4-bar signal strength indicator */
     lv_obj_t *gps_cont;
     lv_obj_t *gps_icon;
-    lv_obj_t *gps_bars[4]; /* ascending-height bars, bottom-aligned */
+    lv_obj_t *gps_bars[4];
 
     lv_obj_t *batt_label;
-    lv_timer_t *clock_timer;
-    lv_timer_t *batt_timer;
-    uint32_t clock_start_ms;
-    uint32_t clock_start_sec;
+    lv_obj_t *rec_dot;
+    lv_obj_t *lock_label;
+
     ui_orientation_t orient;
+    ui_status_bar_kind_t kind;
     bool gps_connected;
-    uint8_t gps_bars_count; /* last known bar count (0-4) */
+    uint8_t gps_bars_count;
+    bool gps_stale;
+    bool recording;
+    bool touch_locked;
 } ui_status_bar_t;
 
 void ui_status_bar_create(ui_status_bar_t *bar, lv_obj_t *parent);
+void ui_status_bar_create_ex(ui_status_bar_t *bar, lv_obj_t *parent, ui_status_bar_kind_t kind);
 void ui_status_bar_apply_theme(ui_status_bar_t *bar);
 void ui_status_bar_set_orientation(ui_status_bar_t *bar, ui_orientation_t o);
 void ui_status_bar_set_gps_status(ui_status_bar_t *bar, bool connected, uint8_t bars_0_to_4);
@@ -34,8 +47,8 @@ lv_obj_t *ui_status_bar_root(ui_status_bar_t *bar);
 
 void ui_status_bar_force_refresh(ui_status_bar_t *bar);
 
-// Call from ANY task
+/** Any task: cache GPS and push to every registered bar on the LVGL thread. */
 void ui_status_bar_set_gps_default_safe(bool connected, uint8_t bars_0_to_4);
-
-// Optional: set which status bar is the default (if you ever have multiple)
 void ui_status_bar_set_default(ui_status_bar_t *bar);
+
+void ui_status_bar_apply_snapshot(const coach_ui_snapshot_t *snap);

@@ -15,6 +15,8 @@ static lv_style_t s_style_button_pressed;
 static lv_style_t s_style_switch_track;
 static lv_style_t s_style_switch_track_checked;
 static lv_style_t s_style_switch_knob;
+static lv_style_t s_style_tile;
+static lv_style_t s_style_tile_pressed;
 
 static ui_theme_palette_t palette_light(void)
 {
@@ -26,6 +28,10 @@ static ui_theme_palette_t palette_light(void)
         .border = lv_color_hex(0xD1D5DB),
         .accent = lv_color_hex(0x2563EB),
         .accent_text = lv_color_hex(0xFFFFFF),
+        .work = lv_color_hex(0xEA580C),
+        .rest = lv_color_hex(0x16A34A),
+        .alert = lv_color_hex(0xDC2626),
+        .rec = lv_color_hex(0xEF4444),
     };
 }
 
@@ -39,6 +45,10 @@ static ui_theme_palette_t palette_dark(void)
         .border = lv_color_hex(0x374151),
         .accent = lv_color_hex(0x3B82F6),
         .accent_text = lv_color_hex(0xFFFFFF),
+        .work = lv_color_hex(0xFB923C),
+        .rest = lv_color_hex(0x4ADE80),
+        .alert = lv_color_hex(0xF87171),
+        .rec = lv_color_hex(0xF87171),
     };
 }
 
@@ -57,6 +67,8 @@ static void styles_init_once(void)
     lv_style_init(&s_style_switch_track);
     lv_style_init(&s_style_switch_track_checked);
     lv_style_init(&s_style_switch_knob);
+    lv_style_init(&s_style_tile);
+    lv_style_init(&s_style_tile_pressed);
 
     lv_style_set_bg_opa(&s_style_screen, LV_OPA_COVER);
     lv_style_set_pad_all(&s_style_screen, 0);
@@ -91,6 +103,16 @@ static void styles_init_once(void)
 
     lv_style_set_bg_opa(&s_style_switch_knob, LV_OPA_COVER);
     lv_style_set_radius(&s_style_switch_knob, LV_RADIUS_CIRCLE);
+
+    lv_style_set_bg_opa(&s_style_tile, LV_OPA_COVER);
+    lv_style_set_radius(&s_style_tile, 10);
+    lv_style_set_border_width(&s_style_tile, 1);
+    lv_style_set_pad_all(&s_style_tile, 4);
+
+    lv_style_set_bg_opa(&s_style_tile_pressed, LV_OPA_COVER);
+    lv_style_set_radius(&s_style_tile_pressed, 10);
+    lv_style_set_border_width(&s_style_tile_pressed, 1);
+    lv_style_set_pad_all(&s_style_tile_pressed, 4);
 }
 
 static void styles_apply_palette(const ui_theme_palette_t *p)
@@ -116,6 +138,15 @@ static void styles_apply_palette(const ui_theme_palette_t *p)
     lv_style_set_bg_color(&s_style_switch_track, p->border);
     lv_style_set_bg_color(&s_style_switch_track_checked, p->accent);
     lv_style_set_bg_color(&s_style_switch_knob, p->surface);
+
+    lv_style_set_bg_color(&s_style_tile, p->surface);
+    lv_style_set_border_color(&s_style_tile, p->border);
+    lv_style_set_text_color(&s_style_tile, p->text);
+
+    lv_color_t pressed = lv_color_mix(p->accent, p->surface, 64);
+    lv_style_set_bg_color(&s_style_tile_pressed, pressed);
+    lv_style_set_border_color(&s_style_tile_pressed, p->accent);
+    lv_style_set_text_color(&s_style_tile_pressed, p->text);
 }
 
 static void apply_to_active(void)
@@ -140,7 +171,7 @@ void ui_theme_init(lv_disp_t *disp)
 void ui_theme_set(ui_theme_t theme)
 {
     s_theme = theme;
-    ui_theme_palette_t p = (theme == UI_THEME_DARK) ?  palette_light(): palette_dark();
+    ui_theme_palette_t p = (theme == UI_THEME_DARK) ? palette_dark() : palette_light();
     ui_theme_set_palette(&p);
 }
 
@@ -212,4 +243,38 @@ void ui_theme_apply_switch(lv_obj_t *sw)
     lv_obj_add_style(sw, &s_style_switch_track, LV_PART_INDICATOR | LV_STATE_DEFAULT);
     lv_obj_add_style(sw, &s_style_switch_track_checked, LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_add_style(sw, &s_style_switch_knob, LV_PART_KNOB | LV_STATE_DEFAULT);
+}
+
+void ui_theme_apply_tile(lv_obj_t *obj)
+{
+    if (!obj) return;
+    lv_obj_remove_style(obj, &s_style_tile, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_remove_style(obj, &s_style_tile_pressed, LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_style(obj, &s_style_tile, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_style(obj, &s_style_tile_pressed, LV_PART_MAIN | LV_STATE_PRESSED);
+}
+
+lv_color_t ui_theme_color_work(void)
+{
+    return s_palette.work;
+}
+
+lv_color_t ui_theme_color_rest(void)
+{
+    return s_palette.rest;
+}
+
+lv_color_t ui_theme_color_alert(void)
+{
+    return s_palette.alert;
+}
+
+lv_color_t ui_theme_color_rec(void)
+{
+    return s_palette.rec;
+}
+
+lv_color_t ui_theme_color_accent(void)
+{
+    return s_palette.accent;
 }

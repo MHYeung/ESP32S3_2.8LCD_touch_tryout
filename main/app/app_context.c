@@ -3,7 +3,7 @@
 sd_mmc_helper_t s_sd;
 QueueHandle_t s_act_q = NULL;
 TaskHandle_t s_act_worker_task = NULL;
-bool s_activity_recording = false;
+volatile bool s_activity_recording = false;
 activity_t s_activity;
 uint32_t s_activity_next_id = 1;
 

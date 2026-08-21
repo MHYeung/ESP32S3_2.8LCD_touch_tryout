@@ -21,33 +21,40 @@ esp_err_t activity_start(activity_t *a, time_t start_ts) {
     return ESP_OK;
 }
 
-esp_err_t activity_update(activity_t *a, float dt_s, float speed_mps, float spm, float power_w, float distance_delta_m, uint32_t stroke_delta) {
+esp_err_t activity_update(activity_t *a, float dt_s, float speed_mps, float spm, float power_w, float distance_delta_m, uint32_t stroke_delta, bool speed_valid, bool spm_valid) {
     if (!a || a->state != ACTIVITY_STATE_RECORDING) return ESP_ERR_INVALID_STATE;
 
     if (dt_s < 0) dt_s = 0;
-    
-    // Totals
+
     a->distance_m += distance_delta_m;
     a->stroke_count += stroke_delta;
     a->total_dt += dt_s;
-    a->duration_ms = (uint32_t)(a->total_dt * 1000);
+    uint32_t from_dt = (uint32_t)(a->total_dt * 1000.0);
+    if (from_dt > a->duration_ms)
+        a->duration_ms = from_dt;
 
-    // Accumulators for averages
-    a->sum_speed_dt += speed_mps * dt_s;
-    a->sum_spm_dt += spm * dt_s;
+    if (speed_valid) {
+        a->sum_speed_dt += speed_mps * dt_s;
+        a->speed_dt += dt_s;
+        if (speed_mps > a->max_speed_mps) a->max_speed_mps = speed_mps;
+    }
+    if (spm_valid) {
+        a->sum_spm_dt += spm * dt_s;
+        a->spm_dt += dt_s;
+        if (spm > a->max_spm) a->max_spm = spm;
+    }
     a->sum_power_dt += power_w * dt_s;
 
-    // Recompute Averages
-    if (a->total_dt > 0.001f) {
-        a->avg_speed_mps = (float)(a->sum_speed_dt / a->total_dt);
-        a->avg_spm       = (float)(a->sum_spm_dt   / a->total_dt);
-        a->avg_power_w   = (float)(a->sum_power_dt / a->total_dt);
+    if (a->speed_dt > 0.001f) {
+        a->avg_speed_mps = (float)(a->sum_speed_dt / a->speed_dt);
     }
-    
-    // Update Max
-    if (speed_mps > a->max_speed_mps) a->max_speed_mps = speed_mps;
-    if (spm > a->max_spm) a->max_spm = spm;
-    
+    if (a->spm_dt > 0.001f) {
+        a->avg_spm = (float)(a->sum_spm_dt / a->spm_dt);
+    }
+    if (a->total_dt > 0.001f) {
+        a->avg_power_w = (float)(a->sum_power_dt / a->total_dt);
+    }
+
     return ESP_OK;
 }
 

@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "driver/ledc.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_io_spi.h"
 #include "esp_lcd_panel_vendor.h"
@@ -25,6 +26,28 @@ static const char *TAG = "lcd_st7789";
 #define LCD_CMD_BITS       8
 #define LCD_PARAM_BITS     8
 
+#define LCD_BL_LEDC_MODE     LEDC_LOW_SPEED_MODE
+#define LCD_BL_LEDC_TIMER    LEDC_TIMER_0
+#define LCD_BL_LEDC_CHANNEL  LEDC_CHANNEL_0
+#define LCD_BL_LEDC_DUTY_RES LEDC_TIMER_8_BIT
+#define LCD_BL_LEDC_FREQ_HZ  5000
+
+static bool s_bl_pwm_ready = false;
+
+esp_err_t lcd_st7789_set_backlight_percent(uint8_t percent)
+{
+    if (!s_bl_pwm_ready || PIN_LCD_BL < 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    uint32_t duty = ((uint32_t)percent * 255U) / 100U;
+    ESP_RETURN_ON_ERROR(ledc_set_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL, duty), TAG, "bl duty");
+    ESP_RETURN_ON_ERROR(ledc_update_duty(LCD_BL_LEDC_MODE, LCD_BL_LEDC_CHANNEL), TAG, "bl update");
+    return ESP_OK;
+}
+
 esp_err_t lcd_st7789_init(esp_lcd_panel_handle_t *out_panel, esp_lcd_panel_io_handle_t *out_io)
 {
     ESP_RETURN_ON_FALSE(out_panel, ESP_ERR_INVALID_ARG, TAG, "out_panel is NULL");
@@ -44,8 +67,8 @@ esp_err_t lcd_st7789_init(esp_lcd_panel_handle_t *out_panel, esp_lcd_panel_io_ha
 
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = PIN_LCD_DC,
-        .cs_gpio_num = PIN_LCD_CS,
+        .dc_gpio_num = (gpio_num_t)PIN_LCD_DC,
+        .cs_gpio_num = (gpio_num_t)PIN_LCD_CS,
         .pclk_hz = LCD_PIXEL_CLOCK_HZ,
         .lcd_cmd_bits = LCD_CMD_BITS,
         .lcd_param_bits = LCD_PARAM_BITS,
@@ -63,21 +86,36 @@ esp_err_t lcd_st7789_init(esp_lcd_panel_handle_t *out_panel, esp_lcd_panel_io_ha
 
     esp_lcd_panel_handle_t panel = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = PIN_LCD_RST,
+        .reset_gpio_num = (gpio_num_t)PIN_LCD_RST,
         .rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_BGR,
         .bits_per_pixel = 16,
     };
     ESP_GOTO_ON_ERROR(esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel),
                       err, TAG, "new_panel_st7789 failed");
 
-    // Backlight
+    /* PWM backlight so brightness/auto-dim can cut current without extra GPIO. */
     if (PIN_LCD_BL >= 0) {
-        gpio_config_t bk = {
-            .mode = GPIO_MODE_OUTPUT,
-            .pin_bit_mask = 1ULL << PIN_LCD_BL,
+        ledc_timer_config_t bl_timer = {
+            .speed_mode = LCD_BL_LEDC_MODE,
+            .duty_resolution = LCD_BL_LEDC_DUTY_RES,
+            .timer_num = LCD_BL_LEDC_TIMER,
+            .freq_hz = LCD_BL_LEDC_FREQ_HZ,
+            .clk_cfg = LEDC_AUTO_CLK,
         };
-        ESP_ERROR_CHECK(gpio_config(&bk));
-        gpio_set_level(PIN_LCD_BL, 1);   // backlight ON
+        ESP_ERROR_CHECK(ledc_timer_config(&bl_timer));
+
+        ledc_channel_config_t bl_ch = {
+            .gpio_num = PIN_LCD_BL,
+            .speed_mode = LCD_BL_LEDC_MODE,
+            .channel = LCD_BL_LEDC_CHANNEL,
+            .intr_type = LEDC_INTR_DISABLE,
+            .timer_sel = LCD_BL_LEDC_TIMER,
+            .duty = 204,
+            .hpoint = 0,
+        };
+        ESP_ERROR_CHECK(ledc_channel_config(&bl_ch));
+        s_bl_pwm_ready = true;
+        ESP_ERROR_CHECK(lcd_st7789_set_backlight_percent(80));
     }
 
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel));
